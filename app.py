@@ -181,7 +181,7 @@ with col_left:
         st.warning("Not connected")
 
     # Connect button
-    if st.button("Connect to NanoVNA", use_container_width=True):
+    if st.button("Connect to NanoVNA", width='stretch'):
         try:
             port = None if port_option == "Auto Detect" else port_option
 
@@ -203,7 +203,7 @@ with col_left:
             st.error(f"Error: {e}")
 
     # Disconnect button
-    if st.button("Disconnect", use_container_width=True, disabled=not st.session_state.connected):
+    if st.button("Disconnect", width='stretch', disabled=not st.session_state.connected):
         if st.session_state.vna_controller:
             st.session_state.vna_controller.disconnect()
             st.session_state.vna_controller = None
@@ -216,7 +216,7 @@ with col_left:
     # Measurement button
     if st.button(
         "Start Measurement",
-        use_container_width=True,
+        width='stretch',
         disabled=not st.session_state.connected,
         type="primary"
     ):
@@ -328,7 +328,7 @@ with col_right:
             height=400
         ).interactive()
 
-        st.altair_chart(impedance_chart, use_container_width=True)
+        st.altair_chart(impedance_chart, use_container_width=True)  # Note: Streamlit charts still use use_container_width
 
         # Phase vs Frequency plot
         if show_phase:
@@ -349,7 +349,7 @@ with col_right:
                 height=300
             ).interactive()
 
-            st.altair_chart(phase_chart, use_container_width=True)
+            st.altair_chart(phase_chart, use_container_width=True)  # Note: Streamlit charts still use use_container_width
 
         # Smith Chart (for S11 only)
         if show_smith and measurement_method == "Reflection (S11)":
@@ -392,12 +392,12 @@ with col_right:
                 y='y:Q'
             )
 
-            st.altair_chart(circle + smith_chart, use_container_width=True)
+            st.altair_chart(circle + smith_chart, use_container_width=True)  # Note: Streamlit charts still use use_container_width
 
         # Data table
         if debug_mode:
             st.markdown("#### Raw Data")
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, use_container_width=True)  # Note: Streamlit dataframe still uses use_container_width
 
             # Download button
             csv = df.to_csv(index=False)
