@@ -37,6 +37,10 @@ if 'sweep_type' not in st.session_state:
     st.session_state.sweep_type = "Linear"
 if 'measurement_method' not in st.session_state:
     st.session_state.measurement_method = "Shunt (S21)"
+if 'use_multi_band' not in st.session_state:
+    st.session_state.use_multi_band = False
+if 'band_configs' not in st.session_state:
+    st.session_state.band_configs = []
 
 
 # Sidebar - Configuration
@@ -117,6 +121,106 @@ sweep_type = st.sidebar.radio(
     ["Linear", "Logarithmic"],
     help="Linear or logarithmic frequency sweep"
 )
+
+# Multi-Band Scan Settings
+st.sidebar.subheader("Multi-Band Scan")
+
+use_multi_band = st.sidebar.checkbox(
+    "Enable Multi-Band Scan",
+    value=False,
+    help="Scan multiple frequency bands with specific point counts for each band"
+)
+
+if use_multi_band:
+    st.sidebar.markdown("**Band Configuration**")
+
+    # Number of bands
+    num_bands = st.sidebar.number_input(
+        "Number of Bands",
+        min_value=1,
+        max_value=10,
+        value=4,
+        step=1,
+        help="Number of frequency bands to scan"
+    )
+
+    # Points per band
+    points_per_band = st.sidebar.number_input(
+        "Points per Band",
+        min_value=11,
+        max_value=301,
+        value=100,
+        step=10,
+        help="Number of measurement points for each band"
+    )
+
+    # Band sweep mode
+    band_sweep_mode = st.sidebar.radio(
+        "Band Sweep Mode",
+        ["Linear", "Logarithmic"],
+        help="Sweep mode for each individual band"
+    )
+
+    # Preset configurations
+    preset = st.sidebar.selectbox(
+        "Preset Configuration",
+        ["Custom", "100kHz-1GHz (4 bands)", "1MHz-1GHz (3 bands)", "10MHz-1GHz (2 bands)"],
+        help="Select a preset band configuration"
+    )
+
+    # Band definitions based on preset
+    if preset == "100kHz-1GHz (4 bands)":
+        band_configs = [
+            (0.1, 1, "100kHz - 1MHz"),
+            (1, 10, "1MHz - 10MHz"),
+            (10, 100, "10MHz - 100MHz"),
+            (100, 1000, "100MHz - 1GHz")
+        ]
+    elif preset == "1MHz-1GHz (3 bands)":
+        band_configs = [
+            (1, 10, "1MHz - 10MHz"),
+            (10, 100, "10MHz - 100MHz"),
+            (100, 1000, "100MHz - 1GHz")
+        ]
+    elif preset == "10MHz-1GHz (2 bands)":
+        band_configs = [
+            (10, 100, "10MHz - 100MHz"),
+            (100, 1000, "100MHz - 1GHz")
+        ]
+    else:  # Custom
+        band_configs = []
+        for i in range(num_bands):
+            with st.sidebar.expander(f"Band {i+1}", expanded=(i == 0)):
+                col1, col2 = st.columns(2)
+                with col1:
+                    band_start = st.number_input(
+                        f"Start (MHz)",
+                        min_value=0.05,
+                        max_value=4500.0,
+                        value=0.1 * (10 ** i) if i < 4 else 1000.0,
+                        step=1.0,
+                        format="%.2f",
+                        key=f"band_{i}_start"
+                    )
+                with col2:
+                    band_stop = st.number_input(
+                        f"Stop (MHz)",
+                        min_value=0.05,
+                        max_value=4500.0,
+                        value=0.1 * (10 ** (i+1)) if i < 3 else 1000.0,
+                        step=1.0,
+                        format="%.2f",
+                        key=f"band_{i}_stop"
+                    )
+                band_configs.append((band_start, band_stop, f"Band {i+1}"))
+
+    # Display band summary
+    if preset != "Custom":
+        st.sidebar.markdown("**Bands:**")
+        for start, stop, label in band_configs:
+            st.sidebar.text(f"• {label}: {points_per_band} pts")
+        total_points = len(band_configs) * points_per_band
+        st.sidebar.info(f"Total: {total_points} points")
 
 # Measurement Settings
 st.sidebar.subheader("Measurement Settings")
@@ -239,11 +343,27 @@ with col_left:
                     status_text.text(f"Measurement {i+1}/{average_count}...")
                     progress_bar.progress((i) / average_count)
 
-                    # Scan based on sweep type
-                    if sweep_type == "Logarithmic":
-                        data = vna.scan_logarithmic(start_freq, stop_freq, sweep_points, outmask=7)
-                    else:  # Linear
-                        data = vna.scan(start_freq, stop_freq, sweep_points, outmask=7)
+                    # Scan based on mode
+                    if use_multi_band:
+                        # Multi-band scan
+                        bands = []
+                        for band_start_mhz, band_stop_mhz, _ in band_configs:
+                            band_start_hz = int(band_start_mhz * 1e6)
+                            band_stop_hz = int(band_stop_mhz * 1e6)
+                            bands.append((band_start_hz, band_stop_hz, points_per_band))
+
+                        sweep_mode = "logarithmic" if band_sweep_mode == "Logarithmic" else "linear"
+                        data = vna.scan_multi_band(bands, outmask=7, sweep_mode=sweep_mode)
+
+                        if debug_mode:
+                            st.info(f"Multi-band scan: {len(bands)} bands, {len(data)} total points")
+
+                    else:
+                        # Single sweep scan
+                        if sweep_type == "Logarithmic":
+                            data = vna.scan_logarithmic(start_freq, stop_freq, sweep_points, outmask=7)
+                        else:  # Linear
+                            data = vna.scan(start_freq, stop_freq, sweep_points, outmask=7)
 
                     if not data:
                         st.error("No data received from NanoVNA")
@@ -280,12 +400,18 @@ with col_left:
                 st.session_state.measurement_data = final_data
                 st.session_state.sweep_type = sweep_type
                 st.session_state.measurement_method = measurement_method
+                st.session_state.use_multi_band = use_multi_band
+                if use_multi_band:
+                    st.session_state.band_configs = band_configs
 
                 status_text.text("Measurement complete!")
                 progress_bar.empty()
                 status_text.empty()
 
-                st.success(f"Measurement completed! ({len(final_data.frequencies)} points, {sweep_type} sweep)")
+                if use_multi_band:
+                    st.success(f"Measurement completed! ({len(final_data.frequencies)} points, Multi-band: {len(band_configs)} bands)")
+                else:
+                    st.success(f"Measurement completed! ({len(final_data.frequencies)} points, {sweep_type} sweep)")
 
             except Exception as e:
                 st.error(f"Measurement error: {e}")
@@ -305,8 +431,16 @@ with col_left:
         st.metric("Avg Impedance", f"{np.mean(data.magnitudes):.2f} Ω")
 
         # Display sweep type and method
-        if 'sweep_type' in st.session_state:
-            st.text(f"Sweep: {st.session_state.sweep_type}")
+        if st.session_state.get('use_multi_band', False):
+            st.text(f"Mode: Multi-Band Scan")
+            if 'band_configs' in st.session_state and st.session_state.band_configs:
+                st.text(f"Bands: {len(st.session_state.band_configs)}")
+                with st.expander("Band Details"):
+                    for i, (start, stop, label) in enumerate(st.session_state.band_configs):
+                        st.text(f"  {i+1}. {label}")
+        else:
+            if 'sweep_type' in st.session_state:
+                st.text(f"Sweep: {st.session_state.sweep_type}")
         if 'measurement_method' in st.session_state:
             st.text(f"Method: {st.session_state.measurement_method}")
 

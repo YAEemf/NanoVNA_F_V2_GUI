@@ -336,7 +336,7 @@ class NanoVNAController:
 
         # Divide frequency range into bands for scanning
         # Use fewer bands for better performance while maintaining log distribution
-        num_bands = min(10, max(3, points // 30))  # 3-10 bands depending on point count
+        num_bands = min(3, max(3, points // 4))  # 3-10 bands depending on point count
 
         band_edges = np.logspace(log_start, log_stop, num_bands + 1)
 
@@ -404,6 +404,90 @@ class NanoVNAController:
             print(f"Final logarithmic scan: {len(final_data)} points")
 
         return final_data
+
+    def scan_multi_band(
+        self,
+        bands: List[Tuple[int, int, int]],
+        outmask: int = 7,
+        sweep_mode: str = "linear"
+    ) -> List[Tuple[float, complex, complex]]:
+        """
+        Perform multi-band scan with different frequency ranges
+
+        This allows scanning different frequency bands with specific point counts,
+        useful for detailed analysis across wide frequency ranges.
+
+        Args:
+            bands: List of (start_freq, stop_freq, points) tuples for each band
+                   Example: [(100e3, 1e6, 100), (1e6, 10e6, 100), ...]
+            outmask: Output format mask (same as scan method)
+            sweep_mode: "linear" or "logarithmic" sweep for each band
+
+        Returns:
+            Combined list of tuples: (frequency, S11_complex, S21_complex)
+        """
+        if not bands:
+            raise ValueError("At least one band must be specified")
+
+        if self.debug:
+            print(f"Multi-band scan: {len(bands)} bands, {sweep_mode} sweep per band")
+            total_points = sum(b[2] for b in bands)
+            print(f"Total points: {total_points}")
+
+        all_data = []
+        scan_function = self.scan_logarithmic if sweep_mode == "logarithmic" else self.scan
+
+        for i, (start_freq, stop_freq, points) in enumerate(bands):
+            if self.debug:
+                print(f"\nBand {i+1}/{len(bands)}: {start_freq/1e6:.3f} - {stop_freq/1e6:.3f} MHz, {points} points")
+
+            try:
+                # Scan this band
+                band_data = scan_function(int(start_freq), int(stop_freq), points, outmask)
+
+                if band_data:
+                    all_data.extend(band_data)
+                    if self.debug:
+                        print(f"  Collected {len(band_data)} points from band {i+1}")
+                else:
+                    print(f"Warning: No data collected from band {i+1}")
+
+            except Exception as e:
+                print(f"Error scanning band {i+1}: {e}")
+                if self.debug:
+                    import traceback
+                    traceback.print_exc()
+                continue
+
+            # Small delay between bands
+            if i < len(bands) - 1:
+                time.sleep(0.1)
+
+        if not all_data:
+            if self.debug:
+                print("No data collected from multi-band scan")
+            return []
+
+        # Sort by frequency to ensure proper order
+        all_data.sort(key=lambda x: x[0])
+
+        # Remove duplicates at band boundaries (keep first occurrence)
+        unique_data = []
+        last_freq = -1
+        freq_tolerance = 0.001  # 0.1% tolerance
+
+        for freq, s11, s21 in all_data:
+            if last_freq < 0 or abs(freq - last_freq) / max(last_freq, freq) > freq_tolerance:
+                unique_data.append((freq, s11, s21))
+                last_freq = freq
+
+        if self.debug:
+            print(f"\nMulti-band scan completed:")
+            print(f"  Total raw points: {len(all_data)}")
+            print(f"  Unique points: {len(unique_data)}")
+            print(f"  Frequency range: {unique_data[0][0]/1e6:.3f} - {unique_data[-1][0]/1e6:.3f} MHz")
+
+        return unique_data
 
     def get_frequencies(self) -> List[float]:
         """
