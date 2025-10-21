@@ -210,6 +210,9 @@ class NanoVNAController:
         if self.debug:
             print(f"Scanning: {start_freq/1e6:.1f} MHz to {stop_freq/1e6:.1f} MHz, {points} points")
 
+        # Calculate dynamic timeout based on points (approximately 0.1s per point + buffer)
+        scan_timeout = max(self.timeout, points * 0.15 + 5)
+
         # Clear buffers
         self.serial.reset_input_buffer()
 
@@ -219,16 +222,29 @@ class NanoVNAController:
 
         if self.debug:
             print(f"TX: {command}")
+            print(f"Timeout set to {scan_timeout:.1f}s for {points} points")
 
         # Read response
         data = []
         start_time = time.time()
         line_count = 0
+        last_data_time = time.time()
+        idle_timeout = 3.0  # Timeout if no data received for 3 seconds
 
         while True:
-            if time.time() - start_time > self.timeout:
+            elapsed = time.time() - start_time
+            idle_time = time.time() - last_data_time
+
+            # Check total timeout
+            if elapsed > scan_timeout:
                 if self.debug:
-                    print(f"Timeout: received {line_count} lines")
+                    print(f"Total timeout reached: received {line_count}/{points} lines in {elapsed:.1f}s")
+                break
+
+            # Check idle timeout (no data received recently)
+            if idle_time > idle_timeout and line_count > 0:
+                if self.debug:
+                    print(f"Idle timeout: no data for {idle_time:.1f}s, received {line_count}/{points} lines")
                 break
 
             if self.serial.in_waiting > 0:
@@ -236,6 +252,8 @@ class NanoVNAController:
 
                 if not line:
                     continue
+
+                last_data_time = time.time()  # Reset idle timer
 
                 if self.debug:
                     print(f"RX: {line}")
@@ -246,6 +264,8 @@ class NanoVNAController:
 
                 # Check for prompt (end of data)
                 if 'ch>' in line:
+                    if self.debug:
+                        print(f"Prompt detected, scan complete")
                     break
 
                 # Parse data line
@@ -264,6 +284,12 @@ class NanoVNAController:
 
                         data.append((freq, s11, s21))
                         line_count += 1
+
+                        # Check if we have all expected points
+                        if line_count >= points:
+                            if self.debug:
+                                print(f"Received all {points} expected points")
+                            break
                 except (ValueError, IndexError) as e:
                     if self.debug:
                         print(f"Error parsing line: {line} - {e}")
@@ -272,7 +298,11 @@ class NanoVNAController:
                 time.sleep(0.01)
 
         if self.debug:
-            print(f"Received {len(data)} data points")
+            print(f"Scan completed: received {len(data)}/{points} data points in {time.time() - start_time:.2f}s")
+
+        # Warn if we didn't get all expected points
+        if len(data) < points:
+            print(f"Warning: Expected {points} points but received {len(data)} points")
 
         return data
 

@@ -143,6 +143,9 @@ class ImpedanceCalculator:
         """
         Calculate average of multiple impedance measurements
 
+        If measurements have different number of points, they will be trimmed
+        to the minimum length to ensure compatibility.
+
         Args:
             impedance_data_list: List of ImpedanceData objects to average
 
@@ -152,16 +155,43 @@ class ImpedanceCalculator:
         if not impedance_data_list:
             raise ValueError("Empty impedance data list")
 
+        if len(impedance_data_list) == 1:
+            # No averaging needed for single measurement
+            return impedance_data_list[0]
+
+        # Find minimum length across all measurements
+        lengths = [len(data.frequencies) for data in impedance_data_list]
+        min_length = min(lengths)
+        max_length = max(lengths)
+
+        # Warn if measurements have different lengths
+        if min_length != max_length:
+            print(f"Warning: Measurements have different lengths ({min_length} to {max_length} points)")
+            print(f"Trimming all measurements to {min_length} points for averaging")
+
+        # Trim all data to minimum length
+        trimmed_data = []
+        for data in impedance_data_list:
+            trimmed = ImpedanceData(
+                frequencies=data.frequencies[:min_length],
+                impedances=data.impedances[:min_length],
+                magnitudes=data.magnitudes[:min_length],
+                phases=data.phases[:min_length],
+                s11=data.s11[:min_length],
+                s21=data.s21[:min_length]
+            )
+            trimmed_data.append(trimmed)
+
         # Use first measurement's frequencies as reference
-        frequencies = impedance_data_list[0].frequencies
+        frequencies = trimmed_data[0].frequencies
 
         # Average complex impedances
-        impedances_array = np.array([data.impedances for data in impedance_data_list])
+        impedances_array = np.array([data.impedances for data in trimmed_data])
         avg_impedances = np.mean(impedances_array, axis=0)
 
         # Average S-parameters
-        s11_array = np.array([data.s11 for data in impedance_data_list])
-        s21_array = np.array([data.s21 for data in impedance_data_list])
+        s11_array = np.array([data.s11 for data in trimmed_data])
+        s21_array = np.array([data.s21 for data in trimmed_data])
         avg_s11 = np.mean(s11_array, axis=0)
         avg_s21 = np.mean(s21_array, axis=0)
 
