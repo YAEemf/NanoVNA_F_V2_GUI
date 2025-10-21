@@ -1,0 +1,359 @@
+"""
+NanoVNA-F v2 Serial Communication Controller
+Handles serial communication with NanoVNA-F v2 device
+"""
+
+import serial
+import serial.tools.list_ports
+import time
+import re
+from typing import Optional, List, Tuple
+import numpy as np
+
+
+class NanoVNAController:
+    """Controller for NanoVNA-F v2 device communication"""
+
+    def __init__(self, port: Optional[str] = None, baudrate: int = 115200, timeout: float = 5.0, debug: bool = False):
+        """
+        Initialize NanoVNA controller
+
+        Args:
+            port: COM port name (e.g., 'COM3'). If None, auto-detect
+            baudrate: Baud rate (default: 115200)
+            timeout: Serial timeout in seconds
+            debug: Enable debug output
+        """
+        self.port = port
+        self.baudrate = baudrate
+        self.timeout = timeout
+        self.debug = debug
+        self.serial: Optional[serial.Serial] = None
+
+    def auto_detect_port(self) -> Optional[str]:
+        """
+        Auto-detect NanoVNA COM port on Windows
+
+        Returns:
+            Port name if found, None otherwise
+        """
+        ports = serial.tools.list_ports.comports()
+
+        # Try to find NanoVNA device by VID/PID or description
+        for port in ports:
+            # NanoVNA-F v2 typically appears as USB Serial Device
+            if self.debug:
+                print(f"Found port: {port.device} - {port.description} - VID:PID={port.vid}:{port.pid}")
+
+            # Common VID:PID for NanoVNA-F v2: 0483:5740 (STM32 Virtual COM Port)
+            if port.vid == 0x0483 and port.pid == 0x5740:
+                if self.debug:
+                    print(f"NanoVNA-F v2 detected on {port.device}")
+                return port.device
+
+            # Fallback: check description
+            if "NanoVNA" in port.description or "STM32 Virtual ComPort" in port.description:
+                if self.debug:
+                    print(f"Possible NanoVNA device on {port.device}")
+                return port.device
+
+        # If no specific device found, return first available COM port
+        if ports:
+            if self.debug:
+                print(f"No NanoVNA detected, using first available port: {ports[0].device}")
+            return ports[0].device
+
+        return None
+
+    def connect(self) -> bool:
+        """
+        Connect to NanoVNA device
+
+        Returns:
+            True if connection successful, False otherwise
+        """
+        try:
+            if self.port is None:
+                self.port = self.auto_detect_port()
+
+            if self.port is None:
+                print("Error: No COM port available")
+                return False
+
+            if self.debug:
+                print(f"Connecting to {self.port}...")
+
+            self.serial = serial.Serial(
+                port=self.port,
+                baudrate=self.baudrate,
+                timeout=self.timeout,
+                bytesize=serial.EIGHTBITS,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE
+            )
+
+            # Wait for device to be ready
+            time.sleep(0.5)
+
+            # Clear input buffer
+            self.serial.reset_input_buffer()
+            self.serial.reset_output_buffer()
+
+            if self.debug:
+                print(f"Connected to {self.port}")
+
+            return True
+
+        except Exception as e:
+            print(f"Error connecting to {self.port}: {e}")
+            return False
+
+    def disconnect(self):
+        """Disconnect from NanoVNA device"""
+        if self.serial and self.serial.is_open:
+            self.serial.close()
+            if self.debug:
+                print("Disconnected from NanoVNA")
+
+    def send_command(self, command: str) -> str:
+        """
+        Send command to NanoVNA and get response
+
+        Args:
+            command: Command string (without newline)
+
+        Returns:
+            Response string
+        """
+        if not self.serial or not self.serial.is_open:
+            raise RuntimeError("Not connected to NanoVNA")
+
+        # Clear buffers
+        self.serial.reset_input_buffer()
+
+        # Send command with newline
+        cmd_bytes = (command + '\n').encode('ascii')
+        self.serial.write(cmd_bytes)
+
+        if self.debug:
+            print(f"TX: {command}")
+
+        # Read response
+        response_lines = []
+        start_time = time.time()
+
+        while True:
+            if time.time() - start_time > self.timeout:
+                break
+
+            if self.serial.in_waiting > 0:
+                line = self.serial.readline().decode('ascii', errors='ignore').strip()
+                if line:
+                    response_lines.append(line)
+                    if self.debug:
+                        print(f"RX: {line}")
+
+                    # Check if response is complete (ends with 'ch>' prompt)
+                    if line.endswith('ch>'):
+                        break
+            else:
+                time.sleep(0.01)
+
+        return '\n'.join(response_lines)
+
+    def get_version(self) -> str:
+        """Get NanoVNA firmware version"""
+        return self.send_command("version")
+
+    def set_sweep_parameters(self, start_freq: int, stop_freq: int, points: int):
+        """
+        Set sweep parameters
+
+        Args:
+            start_freq: Start frequency in Hz
+            stop_freq: Stop frequency in Hz
+            points: Number of sweep points (11-301)
+        """
+        if points < 11 or points > 301:
+            raise ValueError("Points must be between 11 and 301")
+
+        command = f"sweep {start_freq} {stop_freq} {points}"
+        response = self.send_command(command)
+        return response
+
+    def scan(self, start_freq: int, stop_freq: int, points: int, outmask: int = 7) -> List[Tuple[float, complex, complex]]:
+        """
+        Perform scan and get measurement data
+
+        Args:
+            start_freq: Start frequency in Hz
+            stop_freq: Stop frequency in Hz
+            points: Number of sweep points (11-301)
+            outmask: Output format mask
+                0: No output
+                1: Frequency only
+                2: S11 data only
+                3: Frequency + S11 data
+                4: S21 data only
+                5: Frequency + S21 data
+                6: S11 data + S21 data
+                7: Frequency + S11 data + S21 data (recommended)
+
+        Returns:
+            List of tuples: (frequency, S11_complex, S21_complex)
+        """
+        if points < 11 or points > 301:
+            raise ValueError("Points must be between 11 and 301")
+
+        command = f"scan {start_freq} {stop_freq} {points} {outmask}"
+
+        if self.debug:
+            print(f"Scanning: {start_freq/1e6:.1f} MHz to {stop_freq/1e6:.1f} MHz, {points} points")
+
+        # Clear buffers
+        self.serial.reset_input_buffer()
+
+        # Send command
+        cmd_bytes = (command + '\n').encode('ascii')
+        self.serial.write(cmd_bytes)
+
+        if self.debug:
+            print(f"TX: {command}")
+
+        # Read response
+        data = []
+        start_time = time.time()
+        line_count = 0
+
+        while True:
+            if time.time() - start_time > self.timeout:
+                if self.debug:
+                    print(f"Timeout: received {line_count} lines")
+                break
+
+            if self.serial.in_waiting > 0:
+                line = self.serial.readline().decode('ascii', errors='ignore').strip()
+
+                if not line:
+                    continue
+
+                if self.debug:
+                    print(f"RX: {line}")
+
+                # Skip echo of command
+                if line.startswith('scan'):
+                    continue
+
+                # Check for prompt (end of data)
+                if 'ch>' in line:
+                    break
+
+                # Parse data line
+                # Format: <frequency> <s11_real> <s11_imag> <s21_real> <s21_imag>
+                try:
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        freq = float(parts[0])
+                        s11_real = float(parts[1])
+                        s11_imag = float(parts[2])
+                        s21_real = float(parts[3])
+                        s21_imag = float(parts[4])
+
+                        s11 = complex(s11_real, s11_imag)
+                        s21 = complex(s21_real, s21_imag)
+
+                        data.append((freq, s11, s21))
+                        line_count += 1
+                except (ValueError, IndexError) as e:
+                    if self.debug:
+                        print(f"Error parsing line: {line} - {e}")
+                    continue
+            else:
+                time.sleep(0.01)
+
+        if self.debug:
+            print(f"Received {len(data)} data points")
+
+        return data
+
+    def get_frequencies(self) -> List[float]:
+        """
+        Get current sweep frequency list
+
+        Returns:
+            List of frequencies in Hz
+        """
+        response = self.send_command("frequencies")
+
+        frequencies = []
+        for line in response.split('\n'):
+            line = line.strip()
+            if line and not line.endswith('ch>') and not line.startswith('frequencies'):
+                try:
+                    freq = float(line)
+                    frequencies.append(freq)
+                except ValueError:
+                    continue
+
+        return frequencies
+
+    def calibration_load(self):
+        """Start calibration: LOAD"""
+        return self.send_command("cal load")
+
+    def calibration_open(self):
+        """Start calibration: OPEN"""
+        return self.send_command("cal open")
+
+    def calibration_short(self):
+        """Start calibration: SHORT"""
+        return self.send_command("cal short")
+
+    def calibration_thru(self):
+        """Start calibration: THRU"""
+        return self.send_command("cal thru")
+
+    def calibration_done(self):
+        """Finish calibration"""
+        return self.send_command("cal done")
+
+    def calibration_on(self):
+        """Enable calibration"""
+        return self.send_command("cal on")
+
+    def calibration_off(self):
+        """Disable calibration"""
+        return self.send_command("cal off")
+
+    def __enter__(self):
+        """Context manager entry"""
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit"""
+        self.disconnect()
+
+
+if __name__ == "__main__":
+    # Test code
+    print("NanoVNA-F v2 Controller Test")
+    print("-" * 50)
+
+    with NanoVNAController(debug=True) as vna:
+        print("\nGetting version...")
+        version = vna.get_version()
+        print(f"Version: {version}")
+
+        print("\nPerforming test scan...")
+        start = 100_000_000  # 100 MHz
+        stop = 200_000_000   # 200 MHz
+        points = 51
+
+        data = vna.scan(start, stop, points, outmask=7)
+
+        print(f"\nReceived {len(data)} data points")
+        if data:
+            print("\nFirst 5 data points:")
+            for i, (freq, s11, s21) in enumerate(data[:5]):
+                print(f"  {i+1}. Freq: {freq/1e6:.2f} MHz, S11: {s11:.6f}, S21: {s21:.6f}")
