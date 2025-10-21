@@ -33,6 +33,10 @@ if 'connected' not in st.session_state:
     st.session_state.connected = False
 if 'vna_controller' not in st.session_state:
     st.session_state.vna_controller = None
+if 'sweep_type' not in st.session_state:
+    st.session_state.sweep_type = "Linear"
+if 'measurement_method' not in st.session_state:
+    st.session_state.measurement_method = "Shunt (S21)"
 
 
 # Sidebar - Configuration
@@ -235,8 +239,11 @@ with col_left:
                     status_text.text(f"Measurement {i+1}/{average_count}...")
                     progress_bar.progress((i) / average_count)
 
-                    # Scan
-                    data = vna.scan(start_freq, stop_freq, sweep_points, outmask=7)
+                    # Scan based on sweep type
+                    if sweep_type == "Logarithmic":
+                        data = vna.scan_logarithmic(start_freq, stop_freq, sweep_points, outmask=7)
+                    else:  # Linear
+                        data = vna.scan(start_freq, stop_freq, sweep_points, outmask=7)
 
                     if not data:
                         st.error("No data received from NanoVNA")
@@ -271,12 +278,14 @@ with col_left:
                     final_data = all_measurements[0]
 
                 st.session_state.measurement_data = final_data
+                st.session_state.sweep_type = sweep_type
+                st.session_state.measurement_method = measurement_method
 
                 status_text.text("Measurement complete!")
                 progress_bar.empty()
                 status_text.empty()
 
-                st.success(f"Measurement completed! ({len(final_data.frequencies)} points)")
+                st.success(f"Measurement completed! ({len(final_data.frequencies)} points, {sweep_type} sweep)")
 
             except Exception as e:
                 st.error(f"Measurement error: {e}")
@@ -294,6 +303,12 @@ with col_left:
         st.metric("Data Points", len(data.frequencies))
         st.metric("Frequency Range", f"{data.frequencies[0]/1e6:.2f} - {data.frequencies[-1]/1e6:.2f} MHz")
         st.metric("Avg Impedance", f"{np.mean(data.magnitudes):.2f} Ω")
+
+        # Display sweep type and method
+        if 'sweep_type' in st.session_state:
+            st.text(f"Sweep: {st.session_state.sweep_type}")
+        if 'measurement_method' in st.session_state:
+            st.text(f"Method: {st.session_state.measurement_method}")
 
 
 with col_right:

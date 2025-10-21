@@ -306,6 +306,105 @@ class NanoVNAController:
 
         return data
 
+    def scan_logarithmic(self, start_freq: int, stop_freq: int, points: int, outmask: int = 7) -> List[Tuple[float, complex, complex]]:
+        """
+        Perform logarithmic sweep scan
+
+        NanoVNA-F v2 scan command only supports linear sweep, so this method
+        performs multiple linear scans across logarithmically-spaced frequency
+        bands and combines the results.
+
+        Args:
+            start_freq: Start frequency in Hz
+            stop_freq: Stop frequency in Hz
+            points: Total number of sweep points (11-301)
+            outmask: Output format mask (same as scan method)
+
+        Returns:
+            List of tuples: (frequency, S11_complex, S21_complex)
+        """
+        if points < 11 or points > 301:
+            raise ValueError("Points must be between 11 and 301")
+
+        if self.debug:
+            print(f"Logarithmic scan: {start_freq/1e6:.1f} MHz to {stop_freq/1e6:.1f} MHz, {points} points")
+
+        # Generate logarithmically-spaced frequency points
+        log_start = np.log10(start_freq)
+        log_stop = np.log10(stop_freq)
+        log_freqs = np.logspace(log_start, log_stop, points)
+
+        # Divide frequency range into bands for scanning
+        # Use fewer bands for better performance while maintaining log distribution
+        num_bands = min(10, max(3, points // 30))  # 3-10 bands depending on point count
+
+        band_edges = np.logspace(log_start, log_stop, num_bands + 1)
+
+        if self.debug:
+            print(f"Using {num_bands} frequency bands for logarithmic scan")
+
+        all_data = []
+
+        for i in range(num_bands):
+            band_start = int(band_edges[i])
+            band_stop = int(band_edges[i + 1])
+
+            # Calculate points for this band (proportional to log density)
+            # Count how many target frequencies fall in this band
+            band_points = np.sum((log_freqs >= band_start) & (log_freqs <= band_stop))
+            band_points = max(11, min(band_points + 5, 101))  # At least 11, max 101 per band
+
+            if self.debug:
+                print(f"Band {i+1}/{num_bands}: {band_start/1e6:.3f}-{band_stop/1e6:.3f} MHz, {band_points} points")
+
+            # Scan this band
+            try:
+                band_data = self.scan(band_start, band_stop, band_points, outmask)
+                all_data.extend(band_data)
+            except Exception as e:
+                if self.debug:
+                    print(f"Error scanning band {i+1}: {e}")
+                continue
+
+            # Small delay between bands
+            time.sleep(0.05)
+
+        if not all_data:
+            if self.debug:
+                print("No data collected from logarithmic scan")
+            return []
+
+        # Sort by frequency
+        all_data.sort(key=lambda x: x[0])
+
+        # Remove duplicates (keep first occurrence)
+        unique_data = []
+        last_freq = -1
+        freq_tolerance = 0.01  # 1% tolerance for considering frequencies as duplicate
+
+        for freq, s11, s21 in all_data:
+            if last_freq < 0 or abs(freq - last_freq) / last_freq > freq_tolerance:
+                unique_data.append((freq, s11, s21))
+                last_freq = freq
+
+        if self.debug:
+            print(f"Logarithmic scan collected {len(all_data)} raw points, {len(unique_data)} unique points")
+
+        # Interpolate to exact logarithmic frequencies if needed
+        # This ensures the output matches the requested log-spaced points
+        if len(unique_data) > points:
+            # Downsample to requested number of points
+            indices = np.linspace(0, len(unique_data) - 1, points, dtype=int)
+            final_data = [unique_data[i] for i in indices]
+        else:
+            # Use all collected data
+            final_data = unique_data
+
+        if self.debug:
+            print(f"Final logarithmic scan: {len(final_data)} points")
+
+        return final_data
+
     def get_frequencies(self) -> List[float]:
         """
         Get current sweep frequency list
