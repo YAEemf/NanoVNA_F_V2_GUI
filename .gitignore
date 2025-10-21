@@ -1,0 +1,8 @@
+__pycache__
+*.pyc
+*.xlsx
+*.pptx
+*.docx
+*.cir
+*.mod
+*.CKT
