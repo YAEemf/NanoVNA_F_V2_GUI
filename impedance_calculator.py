@@ -41,7 +41,8 @@ class ImpedanceCalculator:
         Calculate impedance from S21 using shunt-through method
 
         For shunt configuration (DUT connected in parallel between Port1 and Port2):
-        Z_shunt = 2 * Z0 / ((1/S21) - 1)
+        S21 = 2*Z0 / (Zdut + 2*Z0)
+        Therefore: Zdut = 2*Z0 * ((1/S21) - 1) = 2*Z0 * (1 - S21) / S21
 
         Args:
             frequencies: Array of frequencies in Hz
@@ -51,11 +52,12 @@ class ImpedanceCalculator:
             ImpedanceData object containing calculated impedance data
         """
         # Calculate impedance using shunt-through formula
-        # Z = 2 * Z0 / ((1/S21) - 1)
+        # Z = 2*Z0 * ((1/S21) - 1) = 2*Z0 * (1 - S21) / S21
         # Avoid division by zero
         s21_safe = np.where(np.abs(s21) < 1e-10, 1e-10 + 0j, s21)
 
-        impedances = 2.0 * self.z0 / ((1.0 / s21_safe) - 1.0)
+        # Correct formula: Z = 2*Z0 * ((1/S21) - 1)
+        impedances = 2.0 * self.z0 * ((1.0 / s21_safe) - 1.0)
 
         # Calculate magnitude and phase
         magnitudes = np.abs(impedances)
@@ -109,8 +111,9 @@ class ImpedanceCalculator:
         """
         Calculate impedance from S21 for series configuration
 
-        For series configuration (DUT connected in series):
-        Z_series = Z0 * (1 - S21) / (2 * S21)
+        For series configuration (DUT connected in series between Port1 and Port2):
+        S21 = Z / (Z + 2*Z0)
+        Therefore: Z = 2*Z0*S21 / (1 - S21)
 
         Args:
             frequencies: Array of frequencies in Hz
@@ -120,11 +123,14 @@ class ImpedanceCalculator:
             ImpedanceData object containing calculated impedance data
         """
         # Calculate impedance using series formula
-        # Z = Z0 * (1 - S21) / (2 * S21)
+        # Z = 2*Z0*S21 / (1 - S21)
         # Avoid division by zero
         s21_safe = np.where(np.abs(s21) < 1e-10, 1e-10 + 0j, s21)
+        denominator = 1.0 - s21_safe
+        denominator_safe = np.where(np.abs(denominator) < 1e-10, 1e-10 + 0j, denominator)
 
-        impedances = self.z0 * (1.0 - s21_safe) / (2.0 * s21_safe)
+        # Correct formula: Z = 2*Z0*S21 / (1 - S21)
+        impedances = 2.0 * self.z0 * s21_safe / denominator_safe
 
         # Calculate magnitude and phase
         magnitudes = np.abs(impedances)
@@ -485,39 +491,95 @@ class ImpedanceCalculator:
 if __name__ == "__main__":
     # Test code
     print("Impedance Calculator Test")
-    print("-" * 50)
+    print("=" * 70)
 
-    # Create test data
+    z0 = 50.0
+    calc = ImpedanceCalculator(z0=z0)
     frequencies = np.linspace(100e6, 200e6, 51)  # 100-200 MHz, 51 points
 
-    # Simulate S21 data for a shunt impedance of 100Ω
-    z_test = 100.0  # 100Ω
-    z0 = 50.0
+    # ========== Test 1: Shunt method ==========
+    print("\n[Test 1] Shunt (S21) method")
+    print("-" * 70)
 
-    # From shunt formula: S21 = 2*Z0 / (2*Z0 + Z_shunt)
-    s21_test = 2 * z0 / (2 * z0 + z_test)
-    s21_array = np.full(len(frequencies), s21_test, dtype=complex)
+    z_test_shunt = 100.0  # 100 Ohm
+    # From shunt formula: S21 = 2*Z0 / (Zdut + 2*Z0)
+    s21_test_shunt = 2 * z0 / (z_test_shunt + 2 * z0)
+    s21_array_shunt = np.full(len(frequencies), s21_test_shunt, dtype=complex)
 
-    # Calculate impedance
-    calc = ImpedanceCalculator(z0=z0)
-    impedance_data = calc.calculate_from_s21_shunt(frequencies, s21_array)
+    print(f"Input impedance:     {z_test_shunt} Ohm")
+    print(f"Calculated S21:      {s21_test_shunt:.6f}")
+    print(f"Expected S21:        {2*50/(100+100):.6f} = 0.5")
 
-    print(f"\nTest: Input impedance = {z_test} Ω")
-    print(f"Calculated impedance (first point) = {impedance_data.magnitudes[0]:.2f} Ω")
-    print(f"Calculated impedance (mean) = {np.mean(impedance_data.magnitudes):.2f} Ω")
-    print(f"Phase (mean) = {np.mean(impedance_data.phases):.2f}°")
+    impedance_data_shunt = calc.calculate_from_s21_shunt(frequencies, s21_array_shunt)
 
-    # Test with S11
-    print("\n" + "-" * 50)
-    print("Test with S11 (reflection method)")
+    print(f"\nReconstructed impedance: {impedance_data_shunt.magnitudes[0]:.2f} Ohm")
+    print(f"Error:                   {abs(impedance_data_shunt.magnitudes[0] - z_test_shunt):.6f} Ohm")
+    assert abs(impedance_data_shunt.magnitudes[0] - z_test_shunt) < 0.01, "Shunt calculation error!"
+    print("[OK] Shunt method verified")
 
-    # Simulate S11 for 75Ω impedance
-    z_test_s11 = 75.0
+    # ========== Test 2: Reflection (S11) method ==========
+    print("\n[Test 2] Reflection (S11) method")
+    print("-" * 70)
+
+    z_test_s11 = 75.0  # 75 Ohm
+    # From reflection formula: S11 = (Z - Z0) / (Z + Z0)
     s11_test = (z_test_s11 - z0) / (z_test_s11 + z0)
     s11_array = np.full(len(frequencies), s11_test, dtype=complex)
 
+    print(f"Input impedance:     {z_test_s11} Ohm")
+    print(f"Calculated S11:      {s11_test:.6f}")
+    print(f"Expected S11:        {(75-50)/(75+50):.6f} = 0.2")
+
     impedance_data_s11 = calc.calculate_from_s11_reflection(frequencies, s11_array)
 
-    print(f"\nTest: Input impedance = {z_test_s11} Ω")
-    print(f"Calculated impedance (first point) = {impedance_data_s11.magnitudes[0]:.2f} Ω")
-    print(f"Calculated impedance (mean) = {np.mean(impedance_data_s11.magnitudes):.2f} Ω")
+    print(f"\nReconstructed impedance: {impedance_data_s11.magnitudes[0]:.2f} Ohm")
+    print(f"Error:                   {abs(impedance_data_s11.magnitudes[0] - z_test_s11):.6f} Ohm")
+    assert abs(impedance_data_s11.magnitudes[0] - z_test_s11) < 0.01, "S11 calculation error!"
+    print("[OK] S11 method verified")
+
+    # ========== Test 3: Series (S21) method ==========
+    print("\n[Test 3] Series (S21) method")
+    print("-" * 70)
+
+    z_test_series = 50.0  # 50 Ohm
+    # From series formula: S21 = Z / (Z + 2*Z0)
+    s21_test_series = z_test_series / (z_test_series + 2 * z0)
+    s21_array_series = np.full(len(frequencies), s21_test_series, dtype=complex)
+
+    print(f"Input impedance:     {z_test_series} Ohm")
+    print(f"Calculated S21:      {s21_test_series:.6f}")
+    print(f"Expected S21:        {50/(50+100):.6f} = 0.333...")
+
+    impedance_data_series = calc.calculate_from_s21_series(frequencies, s21_array_series)
+
+    print(f"\nReconstructed impedance: {impedance_data_series.magnitudes[0]:.2f} Ohm")
+    print(f"Error:                   {abs(impedance_data_series.magnitudes[0] - z_test_series):.6f} Ohm")
+    assert abs(impedance_data_series.magnitudes[0] - z_test_series) < 0.01, "Series calculation error!"
+    print("[OK] Series method verified")
+
+    # ========== Test 4: Consistency check ==========
+    print("\n[Test 4] Same DUT measured with S11 and Shunt should give similar results")
+    print("-" * 70)
+
+    z_dut = 100.0  # 100 Ohm DUT
+
+    # S11 measurement
+    s11_dut = (z_dut - z0) / (z_dut + z0)
+    s11_array_dut = np.full(len(frequencies), s11_dut, dtype=complex)
+    z_from_s11 = calc.calculate_from_s11_reflection(frequencies, s11_array_dut)
+
+    # Shunt measurement
+    s21_dut = 2 * z0 / (z_dut + 2 * z0)
+    s21_array_dut = np.full(len(frequencies), s21_dut, dtype=complex)
+    z_from_shunt = calc.calculate_from_s21_shunt(frequencies, s21_array_dut)
+
+    print(f"DUT impedance:           {z_dut} Ohm")
+    print(f"From S11 (Reflection):   {z_from_s11.magnitudes[0]:.2f} Ohm")
+    print(f"From S21 (Shunt):        {z_from_shunt.magnitudes[0]:.2f} Ohm")
+    print(f"Difference:              {abs(z_from_s11.magnitudes[0] - z_from_shunt.magnitudes[0]):.6f} Ohm")
+    assert abs(z_from_s11.magnitudes[0] - z_from_shunt.magnitudes[0]) < 0.01, "S11 and Shunt should give same result!"
+    print("[OK] Consistency verified - S11 and Shunt give identical results")
+
+    print("\n" + "=" * 70)
+    print("All tests passed! [OK]")
+    print("=" * 70)
