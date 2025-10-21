@@ -131,7 +131,7 @@ st.sidebar.subheader("Multi-Band Scan")
 
 use_multi_band = st.sidebar.checkbox(
     "Enable Multi-Band Scan",
-    value=False,
+    value=True,
     help="Scan multiple frequency bands with specific point counts for each band"
 )
 
@@ -168,7 +168,7 @@ if use_multi_band:
     # Calibration settings
     use_calibration = st.sidebar.checkbox(
         "Apply Calibration per Band",
-        value=False,
+        value=True,
         help="Apply different calibration data for each frequency band"
     )
 
@@ -269,7 +269,7 @@ st.sidebar.subheader("Measurement Settings")
 # Measurement method
 measurement_method = st.sidebar.selectbox(
     "Calculation Method",
-    ["Shunt (S21)", "Reflection (S11)", "Series (S21)"],
+    ["Reflection (S11)", "Shunt (S21)", "Series (S21)"],
     help="Method for impedance calculation"
 )
 
@@ -293,6 +293,34 @@ average_count = st.sidebar.number_input(
     step=1,
     help="Number of measurements to average (1 = no averaging)"
 )
+
+# Averaging method (only shown if N > 1)
+if average_count > 1:
+    averaging_method = st.sidebar.selectbox(
+        "Averaging Method",
+        ["Mean", "Median", "Trimmed Mean", "Robust (MAD)"],
+        index=3,  # Default: Robust
+        help=(
+            "Method for combining multiple measurements:\n\n"
+            "• Mean: Simple arithmetic average (sensitive to outliers)\n\n"
+            "• Median: Middle value (very robust, but may lose precision)\n\n"
+            "• Trimmed Mean: Remove top/bottom 10% before averaging (balanced)\n\n"
+            "• Robust (MAD): Remove outliers using MAD (Median Absolute Deviation), "
+            "then average remaining values. **Recommended for low impedance (<1Ω) measurements**"
+        )
+    )
+
+    # Show method description
+    if averaging_method == "Mean":
+        st.sidebar.caption("📊 Standard average - good for stable measurements")
+    elif averaging_method == "Median":
+        st.sidebar.caption("🛡️ Most robust - excellent for noisy data")
+    elif averaging_method == "Trimmed Mean":
+        st.sidebar.caption("⚖️ Balanced - removes 10% extreme values")
+    else:  # Robust (MAD)
+        st.sidebar.caption("🎯 Intelligent outlier rejection - best for low-Z measurements")
+else:
+    averaging_method = "Mean"  # Default when N=1
 
 # Debug mode
 debug_mode = st.sidebar.checkbox(
@@ -440,7 +468,19 @@ with col_left:
 
                 # Average measurements if needed
                 if average_count > 1:
-                    final_data = calc.calculate_average(all_measurements)
+                    # Convert averaging method name to mode parameter
+                    mode_map = {
+                        "Mean": "mean",
+                        "Median": "median",
+                        "Trimmed Mean": "trimmed",
+                        "Robust (MAD)": "robust"
+                    }
+                    mode = mode_map.get(averaging_method, "mean")
+
+                    if debug_mode:
+                        st.info(f"Averaging {average_count} measurements using {averaging_method} method")
+
+                    final_data = calc.calculate_average(all_measurements, mode=mode)
                 else:
                     final_data = all_measurements[0]
 

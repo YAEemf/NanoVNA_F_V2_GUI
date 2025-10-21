@@ -139,15 +139,24 @@ class ImpedanceCalculator:
             s21=s21
         )
 
-    def calculate_average(self, impedance_data_list: List[ImpedanceData]) -> ImpedanceData:
+    def calculate_average(
+        self,
+        impedance_data_list: List[ImpedanceData],
+        mode: str = "mean"
+    ) -> ImpedanceData:
         """
-        Calculate average of multiple impedance measurements
+        Calculate average of multiple impedance measurements using various methods
 
         If measurements have different number of points, they will be trimmed
         to the minimum length to ensure compatibility.
 
         Args:
             impedance_data_list: List of ImpedanceData objects to average
+            mode: Averaging method
+                - "mean": Simple arithmetic mean (default)
+                - "median": Median (robust to outliers)
+                - "trimmed": Trimmed mean (removes top/bottom 10%)
+                - "robust": Robust mean with MAD-based outlier rejection
 
         Returns:
             Averaged ImpedanceData object
@@ -185,15 +194,30 @@ class ImpedanceCalculator:
         # Use first measurement's frequencies as reference
         frequencies = trimmed_data[0].frequencies
 
-        # Average complex impedances
+        # Prepare data arrays
         impedances_array = np.array([data.impedances for data in trimmed_data])
-        avg_impedances = np.mean(impedances_array, axis=0)
-
-        # Average S-parameters
         s11_array = np.array([data.s11 for data in trimmed_data])
         s21_array = np.array([data.s21 for data in trimmed_data])
-        avg_s11 = np.mean(s11_array, axis=0)
-        avg_s21 = np.mean(s21_array, axis=0)
+
+        # Apply averaging method
+        if mode == "mean":
+            avg_impedances = self._mean_average(impedances_array)
+            avg_s11 = self._mean_average(s11_array)
+            avg_s21 = self._mean_average(s21_array)
+        elif mode == "median":
+            avg_impedances = self._median_average(impedances_array)
+            avg_s11 = self._median_average(s11_array)
+            avg_s21 = self._median_average(s21_array)
+        elif mode == "trimmed":
+            avg_impedances = self._trimmed_mean_average(impedances_array)
+            avg_s11 = self._trimmed_mean_average(s11_array)
+            avg_s21 = self._trimmed_mean_average(s21_array)
+        elif mode == "robust":
+            avg_impedances = self._robust_average(impedances_array)
+            avg_s11 = self._robust_average(s11_array)
+            avg_s21 = self._robust_average(s21_array)
+        else:
+            raise ValueError(f"Unknown averaging mode: {mode}")
 
         # Recalculate magnitude and phase from averaged complex impedance
         magnitudes = np.abs(avg_impedances)
@@ -207,6 +231,166 @@ class ImpedanceCalculator:
             s11=avg_s11,
             s21=avg_s21
         )
+
+    def _mean_average(self, data_array: np.ndarray) -> np.ndarray:
+        """
+        Simple arithmetic mean
+
+        Args:
+            data_array: Array of shape (n_measurements, n_points)
+
+        Returns:
+            Averaged array of shape (n_points,)
+        """
+        return np.mean(data_array, axis=0)
+
+    def _median_average(self, data_array: np.ndarray) -> np.ndarray:
+        """
+        Median (most robust to outliers)
+
+        For complex numbers, compute median of real and imaginary parts separately.
+
+        Args:
+            data_array: Array of shape (n_measurements, n_points)
+
+        Returns:
+            Median array of shape (n_points,)
+        """
+        if np.iscomplexobj(data_array):
+            # For complex data, compute median of real and imaginary parts separately
+            real_median = np.median(data_array.real, axis=0)
+            imag_median = np.median(data_array.imag, axis=0)
+            return real_median + 1j * imag_median
+        else:
+            return np.median(data_array, axis=0)
+
+    def _trimmed_mean_average(self, data_array: np.ndarray, trim_percent: float = 0.1) -> np.ndarray:
+        """
+        Trimmed mean (removes extreme values before averaging)
+
+        Removes the top and bottom trim_percent of values before computing mean.
+        For complex numbers, trimming is based on magnitude.
+
+        Args:
+            data_array: Array of shape (n_measurements, n_points)
+            trim_percent: Percentage to trim from each end (default: 0.1 = 10%)
+
+        Returns:
+            Trimmed mean array of shape (n_points,)
+        """
+        from scipy import stats
+
+        if np.iscomplexobj(data_array):
+            # For complex data, trim based on magnitude
+            magnitudes = np.abs(data_array)
+
+            # Compute trimmed mean for each frequency point
+            result = np.zeros(data_array.shape[1], dtype=complex)
+
+            for i in range(data_array.shape[1]):
+                # Get data for this frequency point
+                point_data = data_array[:, i]
+                point_mags = magnitudes[:, i]
+
+                # Sort by magnitude
+                sorted_indices = np.argsort(point_mags)
+
+                # Calculate trim count
+                n = len(point_data)
+                trim_count = int(n * trim_percent)
+
+                # Remove extreme values based on magnitude
+                if trim_count > 0 and n > 2 * trim_count:
+                    trimmed_indices = sorted_indices[trim_count:-trim_count]
+                    result[i] = np.mean(point_data[trimmed_indices])
+                else:
+                    # Not enough data to trim, use mean
+                    result[i] = np.mean(point_data)
+
+            return result
+        else:
+            # For real data, use scipy's trimmed mean
+            return stats.trim_mean(data_array, trim_percent, axis=0)
+
+    def _robust_average(self, data_array: np.ndarray, mad_threshold: float = 3.0) -> np.ndarray:
+        """
+        Robust average using MAD (Median Absolute Deviation) for outlier rejection
+
+        This method:
+        1. Computes the median for each point
+        2. Computes MAD (Median Absolute Deviation)
+        3. Rejects outliers beyond mad_threshold * MAD
+        4. Averages remaining values
+
+        For complex numbers, outlier detection is based on magnitude deviation.
+
+        Args:
+            data_array: Array of shape (n_measurements, n_points)
+            mad_threshold: Threshold for outlier rejection (default: 3.0)
+
+        Returns:
+            Robust averaged array of shape (n_points,)
+        """
+        if np.iscomplexobj(data_array):
+            # For complex data, use magnitude-based outlier detection
+            magnitudes = np.abs(data_array)
+
+            # Compute robust average for each frequency point
+            result = np.zeros(data_array.shape[1], dtype=complex)
+
+            for i in range(data_array.shape[1]):
+                # Get data for this frequency point
+                point_data = data_array[:, i]
+                point_mags = magnitudes[:, i]
+
+                # Compute median and MAD for magnitudes
+                median_mag = np.median(point_mags)
+                mad = np.median(np.abs(point_mags - median_mag))
+
+                # Avoid division by zero
+                if mad < 1e-10:
+                    # All values are very similar, use mean
+                    result[i] = np.mean(point_data)
+                else:
+                    # Identify inliers (non-outliers)
+                    # MAD-based threshold: |magnitude - median_magnitude| < threshold * MAD
+                    deviation = np.abs(point_mags - median_mag)
+                    inlier_mask = deviation < (mad_threshold * mad)
+
+                    # Use mean of inliers
+                    if np.sum(inlier_mask) > 0:
+                        result[i] = np.mean(point_data[inlier_mask])
+                    else:
+                        # All points rejected (shouldn't happen), use median
+                        real_median = np.median(point_data.real)
+                        imag_median = np.median(point_data.imag)
+                        result[i] = real_median + 1j * imag_median
+
+            return result
+        else:
+            # For real data
+            result = np.zeros(data_array.shape[1])
+
+            for i in range(data_array.shape[1]):
+                point_data = data_array[:, i]
+
+                # Compute median and MAD
+                median_val = np.median(point_data)
+                mad = np.median(np.abs(point_data - median_val))
+
+                if mad < 1e-10:
+                    result[i] = np.mean(point_data)
+                else:
+                    # Identify inliers
+                    deviation = np.abs(point_data - median_val)
+                    inlier_mask = deviation < (mad_threshold * mad)
+
+                    if np.sum(inlier_mask) > 0:
+                        result[i] = np.mean(point_data[inlier_mask])
+                    else:
+                        result[i] = median_val
+
+            return result
 
     def calculate_with_reference(
         self,

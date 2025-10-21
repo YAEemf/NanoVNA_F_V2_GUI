@@ -6,6 +6,7 @@ streamlit>=1.30.0
 numpy>=1.24.0
 pandas>=2.0.0
 altair>=5.0.0
+scipy>=1.10.0
 
 # Serial communication
 pyserial>=3.5
