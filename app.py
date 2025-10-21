@@ -41,6 +41,10 @@ if 'use_multi_band' not in st.session_state:
     st.session_state.use_multi_band = False
 if 'band_configs' not in st.session_state:
     st.session_state.band_configs = []
+if 'calibration_ids' not in st.session_state:
+    st.session_state.calibration_ids = None
+if 'use_calibration' not in st.session_state:
+    st.session_state.use_calibration = False
 
 
 # Sidebar - Configuration
@@ -161,6 +165,13 @@ if use_multi_band:
         help="Sweep mode for each individual band"
     )
 
+    # Calibration settings
+    use_calibration = st.sidebar.checkbox(
+        "Apply Calibration per Band",
+        value=False,
+        help="Apply different calibration data for each frequency band"
+    )
+
     # Preset configurations
     preset = st.sidebar.selectbox(
         "Preset Configuration",
@@ -176,19 +187,24 @@ if use_multi_band:
             (10, 100, "10MHz - 100MHz"),
             (100, 1000, "100MHz - 1GHz")
         ]
+        # Default calibration IDs for preset
+        default_cal_ids = [0, 1, 2, 3]
     elif preset == "1MHz-1GHz (3 bands)":
         band_configs = [
             (1, 10, "1MHz - 10MHz"),
             (10, 100, "10MHz - 100MHz"),
             (100, 1000, "100MHz - 1GHz")
         ]
+        default_cal_ids = [1, 2, 3]
     elif preset == "10MHz-1GHz (2 bands)":
         band_configs = [
             (10, 100, "10MHz - 100MHz"),
             (100, 1000, "100MHz - 1GHz")
         ]
+        default_cal_ids = [2, 3]
     else:  # Custom
         band_configs = []
+        default_cal_ids = []
         for i in range(num_bands):
             with st.sidebar.expander(f"Band {i+1}", expanded=(i == 0)):
                 col1, col2 = st.columns(2)
@@ -212,13 +228,38 @@ if use_multi_band:
                         format="%.2f",
                         key=f"band_{i}_stop"
                     )
+
+                # Calibration ID for this band
+                if use_calibration:
+                    cal_id = st.number_input(
+                        "Calibration ID",
+                        min_value=0,
+                        max_value=6,
+                        value=min(i, 6),
+                        step=1,
+                        key=f"band_{i}_cal_id",
+                        help="Calibration slot (0-6) to apply for this band"
+                    )
+                    default_cal_ids.append(cal_id)
+                else:
+                    default_cal_ids.append(None)
+
                 band_configs.append((band_start, band_stop, f"Band {i+1}"))
+
+    # Get calibration IDs (only if calibration is enabled)
+    if use_calibration:
+        calibration_ids = default_cal_ids
+    else:
+        calibration_ids = None
 
     # Display band summary
     if preset != "Custom":
         st.sidebar.markdown("**Bands:**")
-        for start, stop, label in band_configs:
-            st.sidebar.text(f"• {label}: {points_per_band} pts")
+        for i, (start, stop, label) in enumerate(band_configs):
+            if use_calibration and calibration_ids:
+                st.sidebar.text(f"• {label}: {points_per_band} pts (Cal ID: {calibration_ids[i]})")
+            else:
+                st.sidebar.text(f"• {label}: {points_per_band} pts")
         total_points = len(band_configs) * points_per_band
         st.sidebar.info(f"Total: {total_points} points")
 
@@ -353,10 +394,16 @@ with col_left:
                             bands.append((band_start_hz, band_stop_hz, points_per_band))
 
                         sweep_mode = "logarithmic" if band_sweep_mode == "Logarithmic" else "linear"
-                        data = vna.scan_multi_band(bands, outmask=7, sweep_mode=sweep_mode)
+                        data = vna.scan_multi_band(
+                            bands,
+                            outmask=7,
+                            sweep_mode=sweep_mode,
+                            calibration_ids=calibration_ids
+                        )
 
                         if debug_mode:
-                            st.info(f"Multi-band scan: {len(bands)} bands, {len(data)} total points")
+                            cal_info = f", Calibration: {calibration_ids}" if calibration_ids else ""
+                            st.info(f"Multi-band scan: {len(bands)} bands, {len(data)} total points{cal_info}")
 
                     else:
                         # Single sweep scan
@@ -403,6 +450,8 @@ with col_left:
                 st.session_state.use_multi_band = use_multi_band
                 if use_multi_band:
                     st.session_state.band_configs = band_configs
+                    st.session_state.use_calibration = use_calibration
+                    st.session_state.calibration_ids = calibration_ids
 
                 status_text.text("Measurement complete!")
                 progress_bar.empty()
@@ -435,9 +484,20 @@ with col_left:
             st.text(f"Mode: Multi-Band Scan")
             if 'band_configs' in st.session_state and st.session_state.band_configs:
                 st.text(f"Bands: {len(st.session_state.band_configs)}")
+
+                # Show calibration status
+                if st.session_state.get('use_calibration', False):
+                    st.text(f"Calibration: Enabled")
+
                 with st.expander("Band Details"):
                     for i, (start, stop, label) in enumerate(st.session_state.band_configs):
-                        st.text(f"  {i+1}. {label}")
+                        cal_info = ""
+                        if (st.session_state.get('use_calibration', False) and
+                            st.session_state.get('calibration_ids') and
+                            i < len(st.session_state.calibration_ids)):
+                            cal_id = st.session_state.calibration_ids[i]
+                            cal_info = f" (Cal ID: {cal_id})" if cal_id is not None else ""
+                        st.text(f"  {i+1}. {label}{cal_info}")
         else:
             if 'sweep_type' in st.session_state:
                 st.text(f"Sweep: {st.session_state.sweep_type}")

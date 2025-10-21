@@ -409,7 +409,8 @@ class NanoVNAController:
         self,
         bands: List[Tuple[int, int, int]],
         outmask: int = 7,
-        sweep_mode: str = "linear"
+        sweep_mode: str = "linear",
+        calibration_ids: Optional[List[Optional[int]]] = None
     ) -> List[Tuple[float, complex, complex]]:
         """
         Perform multi-band scan with different frequency ranges
@@ -422,6 +423,9 @@ class NanoVNAController:
                    Example: [(100e3, 1e6, 100), (1e6, 10e6, 100), ...]
             outmask: Output format mask (same as scan method)
             sweep_mode: "linear" or "logarithmic" sweep for each band
+            calibration_ids: Optional list of calibration slot IDs (0-6) for each band.
+                           None or an empty list means no calibration will be applied.
+                           Example: [0, 1, 2, 3] to apply different calibration for each band
 
         Returns:
             Combined list of tuples: (frequency, S11_complex, S21_complex)
@@ -429,10 +433,17 @@ class NanoVNAController:
         if not bands:
             raise ValueError("At least one band must be specified")
 
+        # Validate calibration IDs if provided
+        if calibration_ids:
+            if len(calibration_ids) != len(bands):
+                raise ValueError(f"Number of calibration IDs ({len(calibration_ids)}) must match number of bands ({len(bands)})")
+
         if self.debug:
             print(f"Multi-band scan: {len(bands)} bands, {sweep_mode} sweep per band")
             total_points = sum(b[2] for b in bands)
             print(f"Total points: {total_points}")
+            if calibration_ids:
+                print(f"Calibration IDs: {calibration_ids}")
 
         all_data = []
         scan_function = self.scan_logarithmic if sweep_mode == "logarithmic" else self.scan
@@ -440,6 +451,19 @@ class NanoVNAController:
         for i, (start_freq, stop_freq, points) in enumerate(bands):
             if self.debug:
                 print(f"\nBand {i+1}/{len(bands)}: {start_freq/1e6:.3f} - {stop_freq/1e6:.3f} MHz, {points} points")
+
+            # Apply calibration for this band if specified
+            if calibration_ids and i < len(calibration_ids) and calibration_ids[i] is not None:
+                cal_id = calibration_ids[i]
+                if self.debug:
+                    print(f"  Applying calibration ID: {cal_id}")
+                try:
+                    self.recall_calibration(cal_id)
+                except Exception as e:
+                    print(f"Warning: Failed to recall calibration {cal_id}: {e}")
+                    if self.debug:
+                        import traceback
+                        traceback.print_exc()
 
             try:
                 # Scan this band
@@ -537,6 +561,45 @@ class NanoVNAController:
     def calibration_off(self):
         """Disable calibration"""
         return self.send_command("cal off")
+
+    def save_calibration(self, slot_id: int):
+        """
+        Save calibration data to slot
+
+        Args:
+            slot_id: Calibration slot number (0-6)
+        """
+        if slot_id < 0 or slot_id > 6:
+            raise ValueError("Calibration slot must be between 0 and 6")
+
+        command = f"save {slot_id}"
+        response = self.send_command(command)
+
+        if self.debug:
+            print(f"Saved calibration to slot {slot_id}")
+
+        return response
+
+    def recall_calibration(self, slot_id: int):
+        """
+        Recall calibration data from slot
+
+        Args:
+            slot_id: Calibration slot number (0-6)
+        """
+        if slot_id < 0 or slot_id > 6:
+            raise ValueError("Calibration slot must be between 0 and 6")
+
+        command = f"recall {slot_id}"
+        response = self.send_command(command)
+
+        if self.debug:
+            print(f"Recalled calibration from slot {slot_id}")
+
+        # Small delay to ensure calibration is loaded
+        time.sleep(0.2)
+
+        return response
 
     def __enter__(self):
         """Context manager entry"""
