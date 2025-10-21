@@ -40,9 +40,15 @@ class ImpedanceCalculator:
         """
         Calculate impedance from S21 using shunt-through method
 
-        For shunt configuration (DUT connected in parallel between Port1 and Port2):
-        S21 = 2*Z0 / (Zdut + 2*Z0)
-        Therefore: Zdut = 2*Z0 * ((1/S21) - 1) = 2*Z0 * (1 - S21) / S21
+        For shunt configuration (DUT connected in parallel between Port1 and Port2),
+        the network is equivalent to a single shunt admittance between two matched
+        ports. Using the ABCD-to-S conversion:
+
+            S21 = 2 / (2 + Z0 / Z)
+
+        Solving for Z yields:
+
+            Z = (Z0 / 2) * (S21 / (1 - S21))
 
         Args:
             frequencies: Array of frequencies in Hz
@@ -51,13 +57,13 @@ class ImpedanceCalculator:
         Returns:
             ImpedanceData object containing calculated impedance data
         """
-        # Calculate impedance using shunt-through formula
-        # Z = 2*Z0 * ((1/S21) - 1) = 2*Z0 * (1 - S21) / S21
-        # Avoid division by zero
-        s21_safe = np.where(np.abs(s21) < 1e-10, 1e-10 + 0j, s21)
+        # Calculate impedance using shunt-through formula:
+        # Z = (Z0 / 2) * (S21 / (1 - S21))
+        # Avoid division by zero when S21 is ~1
+        denominator = 1.0 - s21
+        denominator_safe = np.where(np.abs(denominator) < 1e-10, 1e-10 + 0j, denominator)
 
-        # Correct formula: Z = 2*Z0 * ((1/S21) - 1)
-        impedances = 2.0 * self.z0 * ((1.0 / s21_safe) - 1.0)
+        impedances = (self.z0 / 2.0) * (s21 / denominator_safe)
 
         # Calculate magnitude and phase
         magnitudes = np.abs(impedances)
@@ -111,9 +117,19 @@ class ImpedanceCalculator:
         """
         Calculate impedance from S21 for series configuration
 
-        For series configuration (DUT connected in series between Port1 and Port2):
-        S21 = Z / (Z + 2*Z0)
-        Therefore: Z = 2*Z0*S21 / (1 - S21)
+        For series configuration (DUT connected in series between Port1 and Port2),
+        the two-port ABCD matrix is:
+
+            [1  Z]
+            [0  1]
+
+        Converting to S-parameters gives:
+
+            S21 = 2 / (2 + Z / Z0)
+
+        Solving for Z yields:
+
+            Z = 2 * Z0 * (1/S21 - 1)
 
         Args:
             frequencies: Array of frequencies in Hz
@@ -122,15 +138,11 @@ class ImpedanceCalculator:
         Returns:
             ImpedanceData object containing calculated impedance data
         """
-        # Calculate impedance using series formula
-        # Z = 2*Z0*S21 / (1 - S21)
-        # Avoid division by zero
+        # Calculate impedance using series-through formula:
+        # Z = 2*Z0*(1/S21 - 1)
+        # Avoid division by zero when S21 is ~0
         s21_safe = np.where(np.abs(s21) < 1e-10, 1e-10 + 0j, s21)
-        denominator = 1.0 - s21_safe
-        denominator_safe = np.where(np.abs(denominator) < 1e-10, 1e-10 + 0j, denominator)
-
-        # Correct formula: Z = 2*Z0*S21 / (1 - S21)
-        impedances = 2.0 * self.z0 * s21_safe / denominator_safe
+        impedances = 2.0 * self.z0 * (1.0 / s21_safe - 1.0)
 
         # Calculate magnitude and phase
         magnitudes = np.abs(impedances)
