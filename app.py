@@ -518,13 +518,64 @@ with col_right:
             'Phase (deg)': data.phases
         })
 
+        # Calculate decade tick values for frequency axis
+        def get_decade_ticks(freq_min, freq_max):
+            """
+            Generate decade (10^n) tick values for logarithmic axis
+
+            Args:
+                freq_min: Minimum frequency in Hz
+                freq_max: Maximum frequency in Hz
+
+            Returns:
+                List of decade values and their labels
+            """
+            import math
+
+            # Calculate decade range
+            min_decade = math.floor(math.log10(freq_min))
+            max_decade = math.ceil(math.log10(freq_max))
+
+            # Generate decade values (1, 10, 100, 1k, 10k, 100k, 1M, 10M, 100M, 1G, ...)
+            decade_values = []
+            decade_labels = []
+
+            for decade in range(min_decade, max_decade + 1):
+                value = 10 ** decade
+                if freq_min <= value <= freq_max:
+                    decade_values.append(value)
+
+                    # Format label with SI prefix
+                    if value >= 1e9:
+                        label = f"{value/1e9:.0f}G"
+                    elif value >= 1e6:
+                        label = f"{value/1e6:.0f}M"
+                    elif value >= 1e3:
+                        label = f"{value/1e3:.0f}k"
+                    else:
+                        label = f"{value:.0f}"
+                    decade_labels.append(label)
+
+            return decade_values, decade_labels
+
+        freq_min = data.frequencies.min()
+        freq_max = data.frequencies.max()
+        decade_values, decade_labels = get_decade_ticks(freq_min, freq_max)
+
         # Impedance vs Frequency plot (log-log)
         st.markdown("#### Impedance vs Frequency")
 
         impedance_chart = alt.Chart(df).mark_line(point=True, color='steelblue').encode(
             x=alt.X('Frequency (Hz):Q',
                     scale=alt.Scale(type='log'),
-                    axis=alt.Axis(title='Frequency (Hz)', format='~s', labelAngle=-45)),
+                    axis=alt.Axis(
+                        title='Frequency',
+                        values=decade_values,
+                        labelExpr=f"datum.value >= 1e9 ? datum.value/1e9 + 'G' : datum.value >= 1e6 ? datum.value/1e6 + 'M' : datum.value >= 1e3 ? datum.value/1e3 + 'k' : datum.value",
+                        labelAngle=-45,
+                        tickCount=len(decade_values),
+                        grid=True
+                    )),
             y=alt.Y('Impedance (Ω):Q',
                     scale=alt.Scale(type='log'),
                     axis=alt.Axis(title='Impedance (Ω)', format='~s')),
@@ -546,7 +597,14 @@ with col_right:
             phase_chart = alt.Chart(df).mark_line(point=True, color='coral').encode(
                 x=alt.X('Frequency (Hz):Q',
                         scale=alt.Scale(type='log'),
-                        axis=alt.Axis(title='Frequency (Hz)', format='~s', labelAngle=-45)),
+                        axis=alt.Axis(
+                            title='Frequency',
+                            values=decade_values,
+                            labelExpr=f"datum.value >= 1e9 ? datum.value/1e9 + 'G' : datum.value >= 1e6 ? datum.value/1e6 + 'M' : datum.value >= 1e3 ? datum.value/1e3 + 'k' : datum.value",
+                            labelAngle=-45,
+                            tickCount=len(decade_values),
+                            grid=True
+                        )),
                 y=alt.Y('Phase (deg):Q',
                         axis=alt.Axis(title='Phase (degrees)')),
                 tooltip=[
