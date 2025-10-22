@@ -1,6 +1,6 @@
 """
-NanoVNA-F v2 Serial Communication Controller
-Handles serial communication with NanoVNA-F v2 device
+NanoVNA-F v2 シリアル通信コントローラ
+NanoVNA-F v2 とのシリアル通信を管理するモジュール
 """
 
 import serial
@@ -12,17 +12,17 @@ import numpy as np
 
 
 class NanoVNAController:
-    """Controller for NanoVNA-F v2 device communication"""
+    """NanoVNA-F v2 デバイスとの通信を扱うコントローラクラス"""
 
     def __init__(self, port: Optional[str] = None, baudrate: int = 115200, timeout: float = 5.0, debug: bool = False):
         """
-        Initialize NanoVNA controller
+        NanoVNA コントローラを初期化する
 
         Args:
-            port: COM port name (e.g., 'COM3'). If None, auto-detect
-            baudrate: Baud rate (default: 115200)
-            timeout: Serial timeout in seconds
-            debug: Enable debug output
+            port: COMポート名 (例: 'COM3')。None の場合は自動検出
+            baudrate: ボーレート (既定: 115200)
+            timeout: シリアル通信のタイムアウト [秒]
+            debug: デバッグ出力を有効化するかどうか
         """
         self.port = port
         self.baudrate = baudrate
@@ -32,32 +32,32 @@ class NanoVNAController:
 
     def auto_detect_port(self) -> Optional[str]:
         """
-        Auto-detect NanoVNA COM port on Windows
+        Windows 上で NanoVNA の COM ポートを自動検出する
 
         Returns:
-            Port name if found, None otherwise
+            見つかった場合はポート名、見つからない場合は None
         """
         ports = serial.tools.list_ports.comports()
 
-        # Try to find NanoVNA device by VID/PID or description
+        # VID/PID またはデバイス説明から NanoVNA を探す
         for port in ports:
-            # NanoVNA-F v2 typically appears as USB Serial Device
+            # NanoVNA-F v2 は USB Serial Device として認識されることが多い
             if self.debug:
                 print(f"Found port: {port.device} - {port.description} - VID:PID={port.vid}:{port.pid}")
 
-            # Common VID:PID for NanoVNA-F v2: 0483:5740 (STM32 Virtual COM Port)
+            # NanoVNA-F v2 の一般的な VID:PID は 0483:5740 (STM32 Virtual COM Port)
             if port.vid == 0x0483 and port.pid == 0x5740:
                 if self.debug:
                     print(f"NanoVNA-F v2 detected on {port.device}")
                 return port.device
 
-            # Fallback: check description
+            # 判別できなければ説明文を確認する
             if "NanoVNA" in port.description or "STM32 Virtual ComPort" in port.description:
                 if self.debug:
                     print(f"Possible NanoVNA device on {port.device}")
                 return port.device
 
-        # If no specific device found, return first available COM port
+        # 見つからない場合は利用可能な最初の COM ポートを返す
         if ports:
             if self.debug:
                 print(f"No NanoVNA detected, using first available port: {ports[0].device}")
@@ -67,10 +67,10 @@ class NanoVNAController:
 
     def connect(self) -> bool:
         """
-        Connect to NanoVNA device
+        NanoVNA デバイスへ接続する
 
         Returns:
-            True if connection successful, False otherwise
+            接続に成功した場合は True、失敗した場合は False
         """
         try:
             if self.port is None:
@@ -92,10 +92,10 @@ class NanoVNAController:
                 stopbits=serial.STOPBITS_ONE
             )
 
-            # Wait for device to be ready
+            # デバイスが応答可能になるまで待つ
             time.sleep(0.5)
 
-            # Clear input buffer
+            # バッファをクリア
             self.serial.reset_input_buffer()
             self.serial.reset_output_buffer()
 
@@ -109,7 +109,7 @@ class NanoVNAController:
             return False
 
     def disconnect(self):
-        """Disconnect from NanoVNA device"""
+        """NanoVNA デバイスとの接続を切断する"""
         if self.serial and self.serial.is_open:
             self.serial.close()
             if self.debug:
@@ -117,28 +117,28 @@ class NanoVNAController:
 
     def send_command(self, command: str) -> str:
         """
-        Send command to NanoVNA and get response
+        NanoVNA にコマンドを送り、応答を取得する
 
         Args:
-            command: Command string (without newline)
+            command: 改行無しのコマンド文字列
 
         Returns:
-            Response string
+            応答文字列
         """
         if not self.serial or not self.serial.is_open:
             raise RuntimeError("Not connected to NanoVNA")
 
-        # Clear buffers
+        # バッファをクリア
         self.serial.reset_input_buffer()
 
-        # Send command with newline
+        # コマンドに改行を付けて送信
         cmd_bytes = (command + '\n').encode('ascii')
         self.serial.write(cmd_bytes)
 
         if self.debug:
             print(f"TX: {command}")
 
-        # Read response
+        # 応答を読み取る
         response_lines = []
         start_time = time.time()
 
@@ -153,7 +153,7 @@ class NanoVNAController:
                     if self.debug:
                         print(f"RX: {line}")
 
-                    # Check if response is complete (ends with 'ch>' prompt)
+                    # 'ch>' プロンプトで応答終了を判定
                     if line.endswith('ch>'):
                         break
             else:
@@ -162,17 +162,17 @@ class NanoVNAController:
         return '\n'.join(response_lines)
 
     def get_version(self) -> str:
-        """Get NanoVNA firmware version"""
+        """NanoVNA のファームウェアバージョンを取得する"""
         return self.send_command("version")
 
     def set_sweep_parameters(self, start_freq: int, stop_freq: int, points: int):
         """
-        Set sweep parameters
+        掃引パラメータを設定する
 
         Args:
-            start_freq: Start frequency in Hz
-            stop_freq: Stop frequency in Hz
-            points: Number of sweep points (11-301)
+            start_freq: 開始周波数 [Hz]
+            stop_freq: 終了周波数 [Hz]
+            points: 測定ポイント数 (11-301)
         """
         if points < 11 or points > 301:
             raise ValueError("Points must be between 11 and 301")
@@ -183,24 +183,24 @@ class NanoVNAController:
 
     def scan(self, start_freq: int, stop_freq: int, points: int, outmask: int = 7) -> List[Tuple[float, complex, complex]]:
         """
-        Perform scan and get measurement data
+        掃引を実行して測定データを取得する
 
         Args:
-            start_freq: Start frequency in Hz
-            stop_freq: Stop frequency in Hz
-            points: Number of sweep points (11-301)
-            outmask: Output format mask
-                0: No output
-                1: Frequency only
-                2: S11 data only
-                3: Frequency + S11 data
-                4: S21 data only
-                5: Frequency + S21 data
-                6: S11 data + S21 data
-                7: Frequency + S11 data + S21 data (recommended)
+            start_freq: 開始周波数 [Hz]
+            stop_freq: 終了周波数 [Hz]
+            points: 測定ポイント数 (11-301)
+            outmask: 出力フォーマットマスク
+                0: 出力なし
+                1: 周波数のみ
+                2: S11 データのみ
+                3: 周波数 + S11 データ
+                4: S21 データのみ
+                5: 周波数 + S21 データ
+                6: S11 データ + S21 データ
+                7: 周波数 + S11 データ + S21 データ (推奨)
 
         Returns:
-            List of tuples: (frequency, S11_complex, S21_complex)
+            (周波数, S11複素数, S21複素数) のタプル一覧
         """
         if points < 11 or points > 301:
             raise ValueError("Points must be between 11 and 301")
@@ -210,13 +210,13 @@ class NanoVNAController:
         if self.debug:
             print(f"Scanning: {start_freq/1e6:.1f} MHz to {stop_freq/1e6:.1f} MHz, {points} points")
 
-        # Calculate dynamic timeout based on points (approximately 0.1s per point + buffer)
+        # ポイント数に応じて動的タイムアウトを設定 (概ね 1ポイント 0.1 秒 + バッファ)
         scan_timeout = max(self.timeout, points * 0.15 + 5)
 
-        # Clear buffers
+        # バッファをクリア
         self.serial.reset_input_buffer()
 
-        # Send command
+        # コマンドを送信
         cmd_bytes = (command + '\n').encode('ascii')
         self.serial.write(cmd_bytes)
 
@@ -224,24 +224,24 @@ class NanoVNAController:
             print(f"TX: {command}")
             print(f"Timeout set to {scan_timeout:.1f}s for {points} points")
 
-        # Read response
+        # 応答を読み取る
         data = []
         start_time = time.time()
         line_count = 0
         last_data_time = time.time()
-        idle_timeout = 3.0  # Timeout if no data received for 3 seconds
+        idle_timeout = 3.0  # 3 秒間データが来なければタイムアウト
 
         while True:
             elapsed = time.time() - start_time
             idle_time = time.time() - last_data_time
 
-            # Check total timeout
+            # 総タイムアウトを確認
             if elapsed > scan_timeout:
                 if self.debug:
                     print(f"Total timeout reached: received {line_count}/{points} lines in {elapsed:.1f}s")
                 break
 
-            # Check idle timeout (no data received recently)
+            # 無通信タイムアウトを確認
             if idle_time > idle_timeout and line_count > 0:
                 if self.debug:
                     print(f"Idle timeout: no data for {idle_time:.1f}s, received {line_count}/{points} lines")
@@ -253,23 +253,23 @@ class NanoVNAController:
                 if not line:
                     continue
 
-                last_data_time = time.time()  # Reset idle timer
+                last_data_time = time.time()  # 無通信タイマーをリセット
 
                 if self.debug:
                     print(f"RX: {line}")
 
-                # Skip echo of command
+                # コマンドのエコーをスキップ
                 if line.startswith('scan'):
                     continue
 
-                # Check for prompt (end of data)
+                # プロンプトが来たら終了
                 if 'ch>' in line:
                     if self.debug:
                         print(f"Prompt detected, scan complete")
                     break
 
-                # Parse data line
-                # Format: <frequency> <s11_real> <s11_imag> <s21_real> <s21_imag>
+                # データ行を解析
+                # フォーマット: <frequency> <s11_real> <s11_imag> <s21_real> <s21_imag>
                 try:
                     parts = line.split()
                     if len(parts) >= 5:
@@ -285,7 +285,7 @@ class NanoVNAController:
                         data.append((freq, s11, s21))
                         line_count += 1
 
-                        # Check if we have all expected points
+                        # 期待したポイント数に達したか確認
                         if line_count >= points:
                             if self.debug:
                                 print(f"Received all {points} expected points")
@@ -300,7 +300,7 @@ class NanoVNAController:
         if self.debug:
             print(f"Scan completed: received {len(data)}/{points} data points in {time.time() - start_time:.2f}s")
 
-        # Warn if we didn't get all expected points
+        # ポイント数が不足している場合は警告
         if len(data) < points:
             print(f"Warning: Expected {points} points but received {len(data)} points")
 
@@ -308,20 +308,19 @@ class NanoVNAController:
 
     def scan_logarithmic(self, start_freq: int, stop_freq: int, points: int, outmask: int = 7) -> List[Tuple[float, complex, complex]]:
         """
-        Perform logarithmic sweep scan
+        対数間隔の掃引を行う
 
-        NanoVNA-F v2 scan command only supports linear sweep, so this method
-        performs multiple linear scans across logarithmically-spaced frequency
-        bands and combines the results.
+        NanoVNA-F v2 のコマンドは線形掃引のみ対応のため、本メソッドでは
+        対数間隔で分割した複数の帯域を線形掃引し、結果を結合する。
 
         Args:
-            start_freq: Start frequency in Hz
-            stop_freq: Stop frequency in Hz
-            points: Total number of sweep points (11-301)
-            outmask: Output format mask (same as scan method)
+            start_freq: 開始周波数 [Hz]
+            stop_freq: 終了周波数 [Hz]
+            points: 総測定ポイント数 (11-301)
+            outmask: 出力フォーマットマスク (scan メソッドと同じ)
 
         Returns:
-            List of tuples: (frequency, S11_complex, S21_complex)
+            (周波数, S11複素数, S21複素数) のタプル一覧
         """
         if points < 11 or points > 301:
             raise ValueError("Points must be between 11 and 301")
@@ -329,14 +328,14 @@ class NanoVNAController:
         if self.debug:
             print(f"Logarithmic scan: {start_freq/1e6:.1f} MHz to {stop_freq/1e6:.1f} MHz, {points} points")
 
-        # Generate logarithmically-spaced frequency points
+        # 対数間隔の周波数リストを生成
         log_start = np.log10(start_freq)
         log_stop = np.log10(stop_freq)
         log_freqs = np.logspace(log_start, log_stop, points)
 
-        # Divide frequency range into bands for scanning
-        # Use fewer bands for better performance while maintaining log distribution
-        num_bands = min(3, max(3, points // 4))  # 3-10 bands depending on point count
+        # 周波数帯域を複数に分割して掃引する
+        # 対数分布を保ちつつ帯域数を抑えて性能を確保
+        num_bands = min(3, max(3, points // 4))  # ポイント数に応じて 3～10 帯域
 
         band_edges = np.logspace(log_start, log_stop, num_bands + 1)
 
@@ -349,15 +348,15 @@ class NanoVNAController:
             band_start = int(band_edges[i])
             band_stop = int(band_edges[i + 1])
 
-            # Calculate points for this band (proportional to log density)
-            # Count how many target frequencies fall in this band
+            # 対数密度に比例するように帯域のポイント数を算出
+            # 目標周波数が帯域内にいくつ含まれるかをカウント
             band_points = np.sum((log_freqs >= band_start) & (log_freqs <= band_stop))
-            band_points = max(11, min(band_points + 5, 101))  # At least 11, max 101 per band
+            band_points = max(11, min(band_points + 5, 101))  # 各帯域で最低 11、最大 101 ポイント
 
             if self.debug:
                 print(f"Band {i+1}/{num_bands}: {band_start/1e6:.3f}-{band_stop/1e6:.3f} MHz, {band_points} points")
 
-            # Scan this band
+            # 各帯域を掃引
             try:
                 band_data = self.scan(band_start, band_stop, band_points, outmask)
                 all_data.extend(band_data)
@@ -366,7 +365,7 @@ class NanoVNAController:
                     print(f"Error scanning band {i+1}: {e}")
                 continue
 
-            # Small delay between bands
+            # 帯域間で少し待機
             time.sleep(0.05)
 
         if not all_data:
@@ -374,13 +373,13 @@ class NanoVNAController:
                 print("No data collected from logarithmic scan")
             return []
 
-        # Sort by frequency
+        # 周波数でソート
         all_data.sort(key=lambda x: x[0])
 
-        # Remove duplicates (keep first occurrence)
+        # 帯域境界の重複を除去 (先に取得した方を残す)
         unique_data = []
         last_freq = -1
-        freq_tolerance = 0.01  # 1% tolerance for considering frequencies as duplicate
+        freq_tolerance = 0.01  # 1% を重複判定のしきい値とする
 
         for freq, s11, s21 in all_data:
             if last_freq < 0 or abs(freq - last_freq) / last_freq > freq_tolerance:
@@ -390,14 +389,14 @@ class NanoVNAController:
         if self.debug:
             print(f"Logarithmic scan collected {len(all_data)} raw points, {len(unique_data)} unique points")
 
-        # Interpolate to exact logarithmic frequencies if needed
-        # This ensures the output matches the requested log-spaced points
+        # 必要に応じて要求された対数周波数に補間
+        # 要求ポイント数に合わせるための処理
         if len(unique_data) > points:
-            # Downsample to requested number of points
+            # 要求されたポイント数に間引く
             indices = np.linspace(0, len(unique_data) - 1, points, dtype=int)
             final_data = [unique_data[i] for i in indices]
         else:
-            # Use all collected data
+            # 収集したデータをそのまま利用
             final_data = unique_data
 
         if self.debug:
@@ -413,27 +412,26 @@ class NanoVNAController:
         calibration_ids: Optional[List[Optional[int]]] = None
     ) -> List[Tuple[float, complex, complex]]:
         """
-        Perform multi-band scan with different frequency ranges
+        複数の周波数帯を個別設定で掃引する
 
-        This allows scanning different frequency bands with specific point counts,
-        useful for detailed analysis across wide frequency ranges.
+        帯域ごとに測定ポイントや掃引モードを変えられるため、広帯域を詳細に観測するときに有効。
 
         Args:
-            bands: List of (start_freq, stop_freq, points) tuples for each band
-                   Example: [(100e3, 1e6, 100), (1e6, 10e6, 100), ...]
-            outmask: Output format mask (same as scan method)
-            sweep_mode: "linear" or "logarithmic" sweep for each band
-            calibration_ids: Optional list of calibration slot IDs (0-6) for each band.
-                           None or an empty list means no calibration will be applied.
-                           Example: [0, 1, 2, 3] to apply different calibration for each band
+            bands: 各帯域の (開始周波数, 終了周波数, ポイント数) のリスト
+                   例: [(100e3, 1e6, 100), (1e6, 10e6, 100), ...]
+            outmask: 出力フォーマットマスク (scan メソッドと同じ)
+            sweep_mode: 各帯域の掃引モード。"linear" または "logarithmic"
+            calibration_ids: 帯域ごとのキャリブレーションスロットID (0-6) のリスト。
+                              None または空リストの場合はキャリブレーション未適用。
+                              例: [0, 1, 2, 3] で各帯域に異なるキャリブレーションを適用
 
         Returns:
-            Combined list of tuples: (frequency, S11_complex, S21_complex)
+            (周波数, S11複素数, S21複素数) の結合リスト
         """
         if not bands:
             raise ValueError("At least one band must be specified")
 
-        # Validate calibration IDs if provided
+        # キャリブレーションIDの整合性チェック
         if calibration_ids:
             if len(calibration_ids) != len(bands):
                 raise ValueError(f"Number of calibration IDs ({len(calibration_ids)}) must match number of bands ({len(bands)})")
@@ -452,7 +450,7 @@ class NanoVNAController:
             if self.debug:
                 print(f"\nBand {i+1}/{len(bands)}: {start_freq/1e6:.3f} - {stop_freq/1e6:.3f} MHz, {points} points")
 
-            # Apply calibration for this band if specified
+            # 指定されていれば帯域ごとのキャリブレーションを適用
             if calibration_ids and i < len(calibration_ids) and calibration_ids[i] is not None:
                 cal_id = calibration_ids[i]
                 if self.debug:
@@ -466,7 +464,7 @@ class NanoVNAController:
                         traceback.print_exc()
 
             try:
-                # Scan this band
+                # 帯域を掃引
                 band_data = scan_function(int(start_freq), int(stop_freq), points, outmask)
 
                 if band_data:
@@ -483,7 +481,7 @@ class NanoVNAController:
                     traceback.print_exc()
                 continue
 
-            # Small delay between bands
+            # 帯域間で短時間待機
             if i < len(bands) - 1:
                 time.sleep(0.1)
 
@@ -492,13 +490,13 @@ class NanoVNAController:
                 print("No data collected from multi-band scan")
             return []
 
-        # Sort by frequency to ensure proper order
+        # 周波数でソートして順序を揃える
         all_data.sort(key=lambda x: x[0])
 
-        # Remove duplicates at band boundaries (keep first occurrence)
+        # 帯域境界で重複したデータを除去 (先着を優先)
         unique_data = []
         last_freq = -1
-        freq_tolerance = 0.001  # 0.1% tolerance
+        freq_tolerance = 0.001  # 0.1% を重複判定のしきい値とする
 
         for freq, s11, s21 in all_data:
             if last_freq < 0 or abs(freq - last_freq) / max(last_freq, freq) > freq_tolerance:
@@ -515,10 +513,10 @@ class NanoVNAController:
 
     def get_frequencies(self) -> List[float]:
         """
-        Get current sweep frequency list
+        現在設定されている掃引周波数リストを取得する
 
         Returns:
-            List of frequencies in Hz
+            周波数 [Hz] のリスト
         """
         response = self.send_command("frequencies")
 
@@ -535,39 +533,39 @@ class NanoVNAController:
         return frequencies
 
     def calibration_load(self):
-        """Start calibration: LOAD"""
+        """キャリブレーション LOAD を開始"""
         return self.send_command("cal load")
 
     def calibration_open(self):
-        """Start calibration: OPEN"""
+        """キャリブレーション OPEN を開始"""
         return self.send_command("cal open")
 
     def calibration_short(self):
-        """Start calibration: SHORT"""
+        """キャリブレーション SHORT を開始"""
         return self.send_command("cal short")
 
     def calibration_thru(self):
-        """Start calibration: THRU"""
+        """キャリブレーション THRU を開始"""
         return self.send_command("cal thru")
 
     def calibration_done(self):
-        """Finish calibration"""
+        """キャリブレーションを完了"""
         return self.send_command("cal done")
 
     def calibration_on(self):
-        """Enable calibration"""
+        """キャリブレーションを有効化"""
         return self.send_command("cal on")
 
     def calibration_off(self):
-        """Disable calibration"""
+        """キャリブレーションを無効化"""
         return self.send_command("cal off")
 
     def save_calibration(self, slot_id: int):
         """
-        Save calibration data to slot
+        キャリブレーションデータをスロットへ保存する
 
         Args:
-            slot_id: Calibration slot number (0-6)
+            slot_id: キャリブレーションスロット番号 (0-6)
         """
         if slot_id < 0 or slot_id > 6:
             raise ValueError("Calibration slot must be between 0 and 6")
@@ -582,10 +580,10 @@ class NanoVNAController:
 
     def recall_calibration(self, slot_id: int):
         """
-        Recall calibration data from slot
+        スロットからキャリブレーションデータを呼び出す
 
         Args:
-            slot_id: Calibration slot number (0-6)
+            slot_id: キャリブレーションスロット番号 (0-6)
         """
         if slot_id < 0 or slot_id > 6:
             raise ValueError("Calibration slot must be between 0 and 6")
@@ -596,23 +594,23 @@ class NanoVNAController:
         if self.debug:
             print(f"Recalled calibration from slot {slot_id}")
 
-        # Small delay to ensure calibration is loaded
+        # キャリブレーションが反映されるよう少し待つ
         time.sleep(0.2)
 
         return response
 
     def __enter__(self):
-        """Context manager entry"""
+        """コンテキストマネージャ: enter"""
         self.connect()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit"""
+        """コンテキストマネージャ: exit"""
         self.disconnect()
 
 
 if __name__ == "__main__":
-    # Test code
+    # 動作確認用テストコード
     print("NanoVNA-F v2 Controller Test")
     print("-" * 50)
 

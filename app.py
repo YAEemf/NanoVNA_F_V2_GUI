@@ -1,6 +1,6 @@
 """
-NanoVNA-F v2 Impedance Measurement Application
-Streamlit-based GUI for impedance measurement using NanoVNA-F v2
+NanoVNA-F v2 インピーダンス測定アプリケーション
+NanoVNA-F v2 を用いたインピーダンス測定用の Streamlit ベース GUI
 """
 
 import streamlit as st
@@ -15,18 +15,18 @@ from nanovna_controller import NanoVNAController
 from impedance_calculator import ImpedanceCalculator, ImpedanceData
 
 
-# Page configuration
+# ページ設定
 st.set_page_config(
     page_title="NanoVNA-F v2 Impedance Measurement",
     page_icon=":bar_chart:",
     layout="wide"
 )
 
-# Title
+# タイトル表示
 st.title("NanoVNA-F v2 Impedance Measurement System")
 st.markdown("### Shunt-Through Method Impedance Analyzer")
 
-# Initialize session state
+# セッション状態の初期化
 if 'measurement_data' not in st.session_state:
     st.session_state.measurement_data = None
 if 'connected' not in st.session_state:
@@ -47,13 +47,13 @@ if 'use_calibration' not in st.session_state:
     st.session_state.use_calibration = False
 
 
-# Sidebar - Configuration
+# サイドバー設定
 st.sidebar.header("Configuration")
 
-# COM Port Settings
+# COMポート設定
 st.sidebar.subheader("COM Port")
 
-# List available COM ports
+# 使用可能なCOMポートの列挙
 available_ports = [port.device for port in serial.tools.list_ports.comports()]
 if not available_ports:
     available_ports = ["No ports found"]
@@ -64,17 +64,17 @@ port_option = st.sidebar.selectbox(
     help="Select COM port or use Auto Detect"
 )
 
-# Frequency Settings
+# 周波数設定
 st.sidebar.subheader("Frequency Settings")
 
 freq_unit = st.sidebar.radio(
     "Frequency Unit",
     ["Hz", "kHz", "MHz", "GHz"],
-    index=2,  # Default: MHz
+    index=2,  # 既定: MHz
     horizontal=True
 )
 
-# Unit conversion factors
+# 周波数単位の換算係数
 unit_factors = {
     "Hz": 1,
     "kHz": 1e3,
@@ -84,7 +84,7 @@ unit_factors = {
 
 freq_factor = unit_factors[freq_unit]
 
-# Frequency range
+# 周波数範囲
 col1, col2 = st.sidebar.columns(2)
 with col1:
     start_freq_input = st.number_input(
@@ -105,11 +105,11 @@ with col2:
         format="%.2f"
     )
 
-# Convert to Hz
+# Hz への変換
 start_freq = int(start_freq_input * freq_factor)
 stop_freq = int(stop_freq_input * freq_factor)
 
-# Sweep points
+# 掃引ポイント数
 sweep_points = st.sidebar.slider(
     "Sweep Points",
     min_value=101,
@@ -119,14 +119,14 @@ sweep_points = st.sidebar.slider(
     help="Number of measurement points (101-301)"
 )
 
-# Sweep type
+# 掃引種別
 sweep_type = st.sidebar.radio(
     "Sweep Type",
     ["Linear", "Logarithmic"],
     help="Linear or logarithmic frequency sweep"
 )
 
-# Multi-Band Scan Settings
+# マルチバンド掃引設定
 st.sidebar.subheader("Multi-Band Scan")
 
 use_multi_band = st.sidebar.checkbox(
@@ -138,7 +138,7 @@ use_multi_band = st.sidebar.checkbox(
 if use_multi_band:
     st.sidebar.markdown("**Band Configuration**")
 
-    # Number of bands
+    # バンド数
     num_bands = st.sidebar.number_input(
         "Number of Bands",
         min_value=1,
@@ -148,7 +148,7 @@ if use_multi_band:
         help="Number of frequency bands to scan"
     )
 
-    # Points per band
+    # 各バンドの測定ポイント数
     points_per_band = st.sidebar.number_input(
         "Points per Band",
         min_value=11,
@@ -158,28 +158,28 @@ if use_multi_band:
         help="Number of measurement points for each band"
     )
 
-    # Band sweep mode
+    # バンドごとの掃引モード
     band_sweep_mode = st.sidebar.radio(
         "Band Sweep Mode",
         ["Linear", "Logarithmic"],
         help="Sweep mode for each individual band"
     )
 
-    # Calibration settings
+    # キャリブレーション設定
     use_calibration = st.sidebar.checkbox(
         "Apply Calibration per Band",
         value=True,
         help="Apply different calibration data for each frequency band"
     )
 
-    # Preset configurations
+    # プリセット構成
     preset = st.sidebar.selectbox(
         "Preset Configuration",
         ["Custom", "100kHz-1GHz (4 bands)", "1MHz-1GHz (3 bands)", "10MHz-1GHz (2 bands)"],
         help="Select a preset band configuration"
     )
 
-    # Band definitions based on preset
+    # プリセットに基づくバンド定義
     if preset == "100kHz-1GHz (4 bands)":
         band_configs = [
             (0.1, 1, "100kHz - 1MHz"),
@@ -187,7 +187,7 @@ if use_multi_band:
             (10, 100, "10MHz - 100MHz"),
             (100, 1000, "100MHz - 1GHz")
         ]
-        # Default calibration IDs for preset
+        # プリセットで使用する既定キャリブレーションID
         default_cal_ids = [0, 1, 2, 3]
     elif preset == "1MHz-1GHz (3 bands)":
         band_configs = [
@@ -202,7 +202,7 @@ if use_multi_band:
             (100, 1000, "100MHz - 1GHz")
         ]
         default_cal_ids = [2, 3]
-    else:  # Custom
+    else:  # カスタム
         band_configs = []
         default_cal_ids = []
         for i in range(num_bands):
@@ -229,7 +229,7 @@ if use_multi_band:
                         key=f"band_{i}_stop"
                     )
 
-                # Calibration ID for this band
+                # バンドごとのキャリブレーションID
                 if use_calibration:
                     cal_id = st.number_input(
                         "Calibration ID",
@@ -246,13 +246,13 @@ if use_multi_band:
 
                 band_configs.append((band_start, band_stop, f"Band {i+1}"))
 
-    # Get calibration IDs (only if calibration is enabled)
+    # キャリブレーションが有効な場合はIDをセット
     if use_calibration:
         calibration_ids = default_cal_ids
     else:
         calibration_ids = None
 
-    # Display band summary
+    # バンド構成の概要表示
     if preset != "Custom":
         st.sidebar.markdown("**Bands:**")
         for i, (start, stop, label) in enumerate(band_configs):
@@ -263,17 +263,17 @@ if use_multi_band:
         total_points = len(band_configs) * points_per_band
         st.sidebar.info(f"Total: {total_points} points")
 
-# Measurement Settings
+# 測定設定
 st.sidebar.subheader("Measurement Settings")
 
-# Measurement method
+# インピーダンス算出方法
 measurement_method = st.sidebar.selectbox(
     "Calculation Method",
     ["Reflection (S11)", "Shunt (S21)", "Series (S21)"],
     help="Method for impedance calculation"
 )
 
-# Characteristic impedance
+# 特性インピーダンス
 z0 = st.sidebar.number_input(
     "Characteristic Impedance Z0 (Ω)",
     min_value=1.0,
@@ -284,7 +284,7 @@ z0 = st.sidebar.number_input(
     help="System characteristic impedance (typically 50Ω)"
 )
 
-# Averaging
+# アベレージ回数
 average_count = st.sidebar.number_input(
     "Average Count (N)",
     min_value=1,
@@ -294,12 +294,12 @@ average_count = st.sidebar.number_input(
     help="Number of measurements to average (1 = no averaging)"
 )
 
-# Averaging method (only shown if N > 1)
+# アベレージ手法 (N > 1 の場合に表示)
 if average_count > 1:
     averaging_method = st.sidebar.selectbox(
         "Averaging Method",
         ["Mean", "Median", "Trimmed Mean", "Robust (MAD)"],
-        index=3,  # Default: Robust
+        index=3,  # 既定: Robust
         help=(
             "Method for combining multiple measurements:\n\n"
             "• Mean: Simple arithmetic average (sensitive to outliers)\n\n"
@@ -310,26 +310,26 @@ if average_count > 1:
         )
     )
 
-    # Show method description
+    # 選択中の手法の説明を表示
     if averaging_method == "Mean":
         st.sidebar.caption("📊 Standard average - good for stable measurements")
     elif averaging_method == "Median":
         st.sidebar.caption("🛡️ Most robust - excellent for noisy data")
     elif averaging_method == "Trimmed Mean":
         st.sidebar.caption("⚖️ Balanced - removes 10% extreme values")
-    else:  # Robust (MAD)
+    else:  # Robust (MAD) 選択時
         st.sidebar.caption("🎯 Intelligent outlier rejection - best for low-Z measurements")
 else:
-    averaging_method = "Mean"  # Default when N=1
+    averaging_method = "Mean"  # N=1 のときは平均を固定
 
-# Debug mode
+# デバッグモード
 debug_mode = st.sidebar.checkbox(
     "Debug Mode",
     value=False,
     help="Show raw data and debug information"
 )
 
-# Display Settings
+# 表示設定
 st.sidebar.subheader("Display Settings")
 
 show_phase = st.sidebar.checkbox(
@@ -345,19 +345,19 @@ show_smith = st.sidebar.checkbox(
 )
 
 
-# Main content area
+# メインコンテンツ領域
 col_left, col_right = st.columns([1, 2])
 
 with col_left:
     st.subheader("Control Panel")
 
-    # Connection status
+    # 接続状態
     if st.session_state.connected:
         st.success("Connected to NanoVNA")
     else:
         st.warning("Not connected")
 
-    # Connect button
+    # 接続ボタン
     if st.button("Connect to NanoVNA", width='stretch'):
         try:
             port = None if port_option == "Auto Detect" else port_option
@@ -367,7 +367,7 @@ with col_left:
                 st.session_state.vna_controller = vna
                 st.session_state.connected = True
 
-                # Get version
+                # デバイス情報の取得
                 version = vna.get_version()
                 if debug_mode:
                     st.info(f"Device: {version}")
@@ -379,7 +379,7 @@ with col_left:
         except Exception as e:
             st.error(f"Error: {e}")
 
-    # Disconnect button
+    # 切断ボタン
     if st.button("Disconnect", width='stretch', disabled=not st.session_state.connected):
         if st.session_state.vna_controller:
             st.session_state.vna_controller.disconnect()
@@ -390,7 +390,7 @@ with col_left:
 
     st.markdown("---")
 
-    # Measurement button
+    # 測定開始ボタン
     if st.button(
         "Start Measurement",
         width='stretch',
@@ -405,16 +405,16 @@ with col_left:
                 progress_bar = st.progress(0)
                 status_text = st.empty()
 
-                # Perform measurements with averaging
+                # 指定回数分の測定を実行して平均化する
                 all_measurements = []
 
                 for i in range(average_count):
                     status_text.text(f"Measurement {i+1}/{average_count}...")
                     progress_bar.progress((i) / average_count)
 
-                    # Scan based on mode
+                    # 設定に応じた掃引を実行
                     if use_multi_band:
-                        # Multi-band scan
+                        # マルチバンド掃引
                         bands = []
                         for band_start_mhz, band_stop_mhz, _ in band_configs:
                             band_start_hz = int(band_start_mhz * 1e6)
@@ -434,41 +434,41 @@ with col_left:
                             st.info(f"Multi-band scan: {len(bands)} bands, {len(data)} total points{cal_info}")
 
                     else:
-                        # Single sweep scan
+                        # 単一掃引
                         if sweep_type == "Logarithmic":
                             data = vna.scan_logarithmic(start_freq, stop_freq, sweep_points, outmask=7)
-                        else:  # Linear
+                        else:  # 線形掃引
                             data = vna.scan(start_freq, stop_freq, sweep_points, outmask=7)
 
                     if not data:
                         st.error("No data received from NanoVNA")
                         break
 
-                    # Extract data
+                    # 取得データを配列化
                     frequencies = np.array([d[0] for d in data])
                     s11 = np.array([d[1] for d in data])
                     s21 = np.array([d[2] for d in data])
 
-                    # Calculate impedance based on selected method
+                    # 選択した手法でインピーダンスを算出
                     if measurement_method == "Shunt (S21)":
                         impedance_data = calc.calculate_from_s21_shunt(frequencies, s21)
                     elif measurement_method == "Reflection (S11)":
                         impedance_data = calc.calculate_from_s11_reflection(frequencies, s11)
-                    else:  # Series (S21)
+                    else:  # シリーズ (S21)
                         impedance_data = calc.calculate_from_s21_series(frequencies, s21)
 
                     all_measurements.append(impedance_data)
 
-                    # Small delay between measurements
+                    # 測定間の短い待機時間
                     if i < average_count - 1:
                         time.sleep(0.1)
 
                 progress_bar.progress(1.0)
                 status_text.text("Processing...")
 
-                # Average measurements if needed
+                # 必要に応じて測定結果を平均化
                 if average_count > 1:
-                    # Convert averaging method name to mode parameter
+                    # UI 表記を内部モード名へ変換
                     mode_map = {
                         "Mean": "mean",
                         "Median": "median",
@@ -508,7 +508,7 @@ with col_left:
                     import traceback
                     st.code(traceback.format_exc())
 
-    # Display measurement info
+    # 測定情報の表示
     if st.session_state.measurement_data:
         st.markdown("---")
         st.subheader("Measurement Info")
@@ -519,13 +519,13 @@ with col_left:
         st.metric("Frequency Range", f"{data.frequencies[0]/1e6:.2f} - {data.frequencies[-1]/1e6:.2f} MHz")
         st.metric("Avg Impedance", f"{np.mean(data.magnitudes):.2f} Ω")
 
-        # Display sweep type and method
+        # 掃引条件と算出手法を表示
         if st.session_state.get('use_multi_band', False):
             st.text(f"Mode: Multi-Band Scan")
             if 'band_configs' in st.session_state and st.session_state.band_configs:
                 st.text(f"Bands: {len(st.session_state.band_configs)}")
 
-                # Show calibration status
+                # キャリブレーション状況の表示
                 if st.session_state.get('use_calibration', False):
                     st.text(f"Calibration: Enabled")
 
@@ -551,32 +551,32 @@ with col_right:
     if st.session_state.measurement_data:
         data = st.session_state.measurement_data
 
-        # Create DataFrame for plotting
+        # グラフ描画用 DataFrame を作成
         df = pd.DataFrame({
             'Frequency (Hz)': data.frequencies,
             'Impedance (Ω)': data.magnitudes,
             'Phase (deg)': data.phases
         })
 
-        # Calculate decade tick values for frequency axis
+        # 周波数軸のデケード目盛を計算する
         def get_decade_ticks(freq_min, freq_max):
             """
-            Generate decade (10^n) tick values for logarithmic axis
+            対数軸用のデケード (10^n) 目盛を生成する
 
             Args:
-                freq_min: Minimum frequency in Hz
-                freq_max: Maximum frequency in Hz
+                freq_min: 最小周波数 [Hz]
+                freq_max: 最大周波数 [Hz]
 
             Returns:
-                List of decade values and their labels
+                デケード値と表示ラベルのリスト
             """
             import math
 
-            # Calculate decade range
+            # デケード範囲を算出
             min_decade = math.floor(math.log10(freq_min))
             max_decade = math.ceil(math.log10(freq_max))
 
-            # Generate decade values (1, 10, 100, 1k, 10k, 100k, 1M, 10M, 100M, 1G, ...)
+            # デケード値 (1, 10, 100, 1k, 10k, 100k, 1M, 10M, 100M, 1G, ...) を生成
             decade_values = []
             decade_labels = []
 
@@ -585,7 +585,7 @@ with col_right:
                 if freq_min <= value <= freq_max:
                     decade_values.append(value)
 
-                    # Format label with SI prefix
+                    # SI 接頭辞付きでラベルを整形
                     if value >= 1e9:
                         label = f"{value/1e9:.0f}G"
                     elif value >= 1e6:
@@ -602,7 +602,7 @@ with col_right:
         freq_max = data.frequencies.max()
         decade_values, decade_labels = get_decade_ticks(freq_min, freq_max)
 
-        # Impedance vs Frequency plot (log-log)
+        # インピーダンスと周波数の両対数プロット
         st.markdown("#### Impedance vs Frequency")
 
         impedance_chart = alt.Chart(df).mark_line(point=True, color='steelblue').encode(
@@ -628,9 +628,9 @@ with col_right:
             height=400
         ).interactive()
 
-        st.altair_chart(impedance_chart, use_container_width=True)  # Note: Streamlit charts still use use_container_width
+        st.altair_chart(impedance_chart, use_container_width=True)  # Streamlit では引き続き use_container_width 指定が必要
 
-        # Phase vs Frequency plot
+        # 位相-周波数プロット
         if show_phase:
             st.markdown("#### Phase vs Frequency")
 
@@ -656,13 +656,13 @@ with col_right:
                 height=300
             ).interactive()
 
-            st.altair_chart(phase_chart, use_container_width=True)  # Note: Streamlit charts still use use_container_width
+            st.altair_chart(phase_chart, use_container_width=True)  # Streamlit では引き続き use_container_width 指定が必要
 
-        # Smith Chart (for S11 only)
+        # スミスチャート (S11 のみ)
         if show_smith and measurement_method == "Reflection (S11)":
             st.markdown("#### Smith Chart")
 
-            # Create Smith Chart data
+            # スミスチャート用のデータを作成
             s11 = data.s11
             real_part = np.real(s11)
             imag_part = np.imag(s11)
@@ -687,7 +687,7 @@ with col_right:
                 height=500
             ).interactive()
 
-            # Add unit circle
+            # 単位円を描画
             circle_data = pd.DataFrame({
                 'angle': np.linspace(0, 2*np.pi, 100)
             })
@@ -699,14 +699,14 @@ with col_right:
                 y='y:Q'
             )
 
-            st.altair_chart(circle + smith_chart, use_container_width=True)  # Note: Streamlit charts still use use_container_width
+            st.altair_chart(circle + smith_chart, use_container_width=True)  # Streamlit では引き続き use_container_width 指定が必要
 
-        # Data table
+        # データ表
         if debug_mode:
             st.markdown("#### Raw Data")
-            st.dataframe(df, use_container_width=True)  # Note: Streamlit dataframe still uses use_container_width
+            st.dataframe(df, use_container_width=True)  # Streamlit では引き続き use_container_width 指定が必要
 
-            # Download button
+            # ダウンロードボタン
             csv = df.to_csv(index=False)
             st.download_button(
                 label="Download CSV",
@@ -719,7 +719,7 @@ with col_right:
         st.info("No measurement data available. Connect to NanoVNA and start measurement.")
 
 
-# Footer
+# フッター
 st.markdown("---")
 st.markdown(
     """

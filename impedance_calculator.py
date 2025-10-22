@@ -1,6 +1,6 @@
 """
-Impedance Calculator using Shunt-Through Method
-Calculates impedance from S-parameters measured by VNA
+シャントスルー法を中心としたインピーダンス計算モジュール
+VNAで取得したSパラメータからDUTのインピーダンスを算出する
 """
 
 import numpy as np
@@ -10,62 +10,65 @@ from dataclasses import dataclass
 
 @dataclass
 class ImpedanceData:
-    """Data class for impedance measurement results"""
-    frequencies: np.ndarray  # Frequencies in Hz
-    impedances: np.ndarray   # Complex impedances in Ohms
-    magnitudes: np.ndarray   # Impedance magnitudes in Ohms
-    phases: np.ndarray       # Impedance phases in degrees
-    s11: np.ndarray          # S11 complex data
-    s21: np.ndarray          # S21 complex data
+    """インピーダンス測定結果を保持するデータクラス"""
+    frequencies: np.ndarray  # 周波数 [Hz]
+    impedances: np.ndarray   # 複素インピーダンス [Ohm]
+    magnitudes: np.ndarray   # インピーダンス絶対値 [Ohm]
+    phases: np.ndarray       # インピーダンス位相 [deg]
+    s11: np.ndarray          # S11 複素データ
+    s21: np.ndarray          # S21 複素データ
 
 
 class ImpedanceCalculator:
     """
-    Calculate impedance from S-parameters using shunt-through method
+    シャントスルー法・反射法・シリーズスルー法でインピーダンスを算出するクラス
 
-    The shunt-through method measures a DUT (Device Under Test) connected
-    between Port1 and Port2 of a VNA in shunt configuration.
+    シャントスルー法ではDUTをVNAのポート同士に並列接続し、シリーズスルー法では
+    直列接続してS21を測定する。
     """
 
     def __init__(self, z0: float = 50.0):
         """
-        Initialize impedance calculator
+        インピーダンス計算器の初期化
 
         Args:
-            z0: Characteristic impedance in Ohms (default: 50Ω)
+            z0: 基準特性インピーダンス [Ohm] (既定値: 50Ω)
         """
         self.z0 = z0
 
     def calculate_from_s21_shunt(self, frequencies: np.ndarray, s21: np.ndarray) -> ImpedanceData:
         """
-        Calculate impedance from S21 using shunt-through method
+        シャントスルー法によるS21からのインピーダンス計算
 
-        For shunt configuration (DUT connected in parallel between Port1 and Port2),
-        the network is equivalent to a single shunt admittance between two matched
-        ports. Using the ABCD-to-S conversion:
+        並列接続されたDUTはABCパラメータ
+
+            A = 1, B = 0, C = 1/Z, D = 1
+
+        に相当し、ABCD→S変換により
 
             S21 = 2 / (2 + Z0 / Z)
 
-        Solving for Z yields:
+        が得られる。これをZについて解くと
 
             Z = (Z0 / 2) * (S21 / (1 - S21))
 
+        となる。
+
         Args:
-            frequencies: Array of frequencies in Hz
-            s21: Array of complex S21 values
+            frequencies: 周波数配列 [Hz]
+            s21: 複素S21配列
 
         Returns:
-            ImpedanceData object containing calculated impedance data
+            計算済みインピーダンスを含むImpedanceData
         """
-        # Calculate impedance using shunt-through formula:
-        # Z = (Z0 / 2) * (S21 / (1 - S21))
-        # Avoid division by zero when S21 is ~1
+        # Z = (Z0 / 2) * (S21 / (1 - S21)) に基づいて計算する
+        # S21 ≈ 1 付近でのゼロ割りを回避する
         denominator = 1.0 - s21
         denominator_safe = np.where(np.abs(denominator) < 1e-10, 1e-10 + 0j, denominator)
 
         impedances = (self.z0 / 2.0) * (s21 / denominator_safe)
 
-        # Calculate magnitude and phase
+        # 絶対値と位相を算出する
         magnitudes = np.abs(impedances)
         phases = np.angle(impedances, deg=True)
 
@@ -74,33 +77,35 @@ class ImpedanceCalculator:
             impedances=impedances,
             magnitudes=magnitudes,
             phases=phases,
-            s11=np.zeros_like(s21),  # Not used in this calculation
+            s11=np.zeros_like(s21),  # 本計算では未使用
             s21=s21
         )
 
     def calculate_from_s11_reflection(self, frequencies: np.ndarray, s11: np.ndarray) -> ImpedanceData:
         """
-        Calculate impedance from S11 using reflection method
+        反射法によるS11からのインピーダンス計算
 
-        For reflection measurement:
-        Z = Z0 * (1 + S11) / (1 - S11)
+        反射測定では反射係数Γ = S11とZ0の関係から
+
+            Z = Z0 * (1 + S11) / (1 - S11)
+
+        が成立する。
 
         Args:
-            frequencies: Array of frequencies in Hz
-            s11: Array of complex S11 values
+            frequencies: 周波数配列 [Hz]
+            s11: 複素S11配列
 
         Returns:
-            ImpedanceData object containing calculated impedance data
+            計算済みインピーダンスを含むImpedanceData
         """
-        # Calculate impedance using reflection formula
-        # Z = Z0 * (1 + S11) / (1 - S11)
-        # Avoid division by zero
+        # Z = Z0 * (1 + S11) / (1 - S11) に基づいて計算する
+        # 分母のゼロ割りを回避する
         denominator = 1.0 - s11
         denominator_safe = np.where(np.abs(denominator) < 1e-10, 1e-10 + 0j, denominator)
 
         impedances = self.z0 * (1.0 + s11) / denominator_safe
 
-        # Calculate magnitude and phase
+        # 絶対値と位相を算出する
         magnitudes = np.abs(impedances)
         phases = np.angle(impedances, deg=True)
 
@@ -110,41 +115,41 @@ class ImpedanceCalculator:
             magnitudes=magnitudes,
             phases=phases,
             s11=s11,
-            s21=np.zeros_like(s11)  # Not used in this calculation
+            s21=np.zeros_like(s11)  # 本計算では未使用
         )
 
     def calculate_from_s21_series(self, frequencies: np.ndarray, s21: np.ndarray) -> ImpedanceData:
         """
-        Calculate impedance from S21 for series configuration
+        シリーズスルー法によるS21からのインピーダンス計算
 
-        For series configuration (DUT connected in series between Port1 and Port2),
-        the two-port ABCD matrix is:
+        直列接続されたDUTのABCD行列は
 
             [1  Z]
             [0  1]
 
-        Converting to S-parameters gives:
+        となり、ABCD→S変換より
 
             S21 = 2 / (2 + Z / Z0)
 
-        Solving for Z yields:
+        が得られる。これをZについて解くと
 
             Z = 2 * Z0 * (1/S21 - 1)
 
+        となる。
+
         Args:
-            frequencies: Array of frequencies in Hz
-            s21: Array of complex S21 values
+            frequencies: 周波数配列 [Hz]
+            s21: 複素S21配列
 
         Returns:
-            ImpedanceData object containing calculated impedance data
+            計算済みインピーダンスを含むImpedanceData
         """
-        # Calculate impedance using series-through formula:
-        # Z = 2*Z0*(1/S21 - 1)
-        # Avoid division by zero when S21 is ~0
+        # Z = 2*Z0*(1/S21 - 1) に基づいて計算する
+        # S21 ≈ 0 付近でのゼロ割りを回避する
         s21_safe = np.where(np.abs(s21) < 1e-10, 1e-10 + 0j, s21)
         impedances = 2.0 * self.z0 * (1.0 / s21_safe - 1.0)
 
-        # Calculate magnitude and phase
+        # 絶対値と位相を算出する
         magnitudes = np.abs(impedances)
         phases = np.angle(impedances, deg=True)
 
@@ -163,40 +168,39 @@ class ImpedanceCalculator:
         mode: str = "mean"
     ) -> ImpedanceData:
         """
-        Calculate average of multiple impedance measurements using various methods
+        複数のインピーダンス測定結果を各種手法で平均化する
 
-        If measurements have different number of points, they will be trimmed
-        to the minimum length to ensure compatibility.
+        測定点数が異なる場合は最小点数に合わせて切り詰める。
 
         Args:
-            impedance_data_list: List of ImpedanceData objects to average
-            mode: Averaging method
-                - "mean": Simple arithmetic mean (default)
-                - "median": Median (robust to outliers)
-                - "trimmed": Trimmed mean (removes top/bottom 10%)
-                - "robust": Robust mean with MAD-based outlier rejection
+            impedance_data_list: 平均対象のImpedanceDataリスト
+            mode: 平均化モード
+                - "mean": 単純平均 (既定値)
+                - "median": 中央値 (外れ値に強い)
+                - "trimmed": 10%両側トリム平均
+                - "robust": MADに基づくロバスト平均
 
         Returns:
-            Averaged ImpedanceData object
+            平均後のImpedanceData
         """
         if not impedance_data_list:
             raise ValueError("Empty impedance data list")
 
         if len(impedance_data_list) == 1:
-            # No averaging needed for single measurement
+            # 1件のみの場合はそのまま返す
             return impedance_data_list[0]
 
-        # Find minimum length across all measurements
+        # 各測定の最小点数を求める
         lengths = [len(data.frequencies) for data in impedance_data_list]
         min_length = min(lengths)
         max_length = max(lengths)
 
-        # Warn if measurements have different lengths
+        # 点数が異なる場合は警告を表示する
         if min_length != max_length:
             print(f"Warning: Measurements have different lengths ({min_length} to {max_length} points)")
             print(f"Trimming all measurements to {min_length} points for averaging")
 
-        # Trim all data to minimum length
+        # 全てのデータを最小点数に揃える
         trimmed_data = []
         for data in impedance_data_list:
             trimmed = ImpedanceData(
@@ -209,15 +213,15 @@ class ImpedanceCalculator:
             )
             trimmed_data.append(trimmed)
 
-        # Use first measurement's frequencies as reference
+        # 基準となる周波数軸を最初の測定から取得する
         frequencies = trimmed_data[0].frequencies
 
-        # Prepare data arrays
+        # 平均計算用に配列を構築する
         impedances_array = np.array([data.impedances for data in trimmed_data])
         s11_array = np.array([data.s11 for data in trimmed_data])
         s21_array = np.array([data.s21 for data in trimmed_data])
 
-        # Apply averaging method
+        # 平均化手法に応じて処理する
         if mode == "mean":
             avg_impedances = self._mean_average(impedances_array)
             avg_s11 = self._mean_average(s11_array)
@@ -237,7 +241,7 @@ class ImpedanceCalculator:
         else:
             raise ValueError(f"Unknown averaging mode: {mode}")
 
-        # Recalculate magnitude and phase from averaged complex impedance
+        # 平均化した複素インピーダンスから絶対値と位相を再計算する
         magnitudes = np.abs(avg_impedances)
         phases = np.angle(avg_impedances, deg=True)
 
@@ -252,30 +256,30 @@ class ImpedanceCalculator:
 
     def _mean_average(self, data_array: np.ndarray) -> np.ndarray:
         """
-        Simple arithmetic mean
+        単純平均を計算する
 
         Args:
-            data_array: Array of shape (n_measurements, n_points)
+            data_array: 形状 (測定本数, 点数) の配列
 
         Returns:
-            Averaged array of shape (n_points,)
+            形状 (点数,) の平均化配列
         """
         return np.mean(data_array, axis=0)
 
     def _median_average(self, data_array: np.ndarray) -> np.ndarray:
         """
-        Median (most robust to outliers)
+        中央値による平均 (外れ値に最も強い)
 
-        For complex numbers, compute median of real and imaginary parts separately.
+        複素数の場合は実部と虚部を別々に中央値処理する。
 
         Args:
-            data_array: Array of shape (n_measurements, n_points)
+            data_array: 形状 (測定本数, 点数) の配列
 
         Returns:
-            Median array of shape (n_points,)
+            形状 (点数,) の中央値配列
         """
         if np.iscomplexobj(data_array):
-            # For complex data, compute median of real and imaginary parts separately
+            # 複素データの場合は実部と虚部を別々に中央値化する
             real_median = np.median(data_array.real, axis=0)
             imag_median = np.median(data_array.imag, axis=0)
             return real_median + 1j * imag_median
@@ -284,122 +288,122 @@ class ImpedanceCalculator:
 
     def _trimmed_mean_average(self, data_array: np.ndarray, trim_percent: float = 0.1) -> np.ndarray:
         """
-        Trimmed mean (removes extreme values before averaging)
+        トリム平均 (外れ値を除去してから平均化する)
 
-        Removes the top and bottom trim_percent of values before computing mean.
-        For complex numbers, trimming is based on magnitude.
+        平均化する前に上下trim_percent分の値を削除する。
+        複素数の場合は絶対値に基づいてトリムを行う。
 
         Args:
-            data_array: Array of shape (n_measurements, n_points)
-            trim_percent: Percentage to trim from each end (default: 0.1 = 10%)
+            data_array: 形状 (測定本数, 点数) の配列
+            trim_percent: 両端からトリムする割合 (既定値: 0.1 = 10%)
 
         Returns:
-            Trimmed mean array of shape (n_points,)
+            形状 (点数,) のトリム平均配列
         """
         from scipy import stats
 
         if np.iscomplexobj(data_array):
-            # For complex data, trim based on magnitude
+            # 複素データの場合は絶対値に基づいてトリムする
             magnitudes = np.abs(data_array)
 
-            # Compute trimmed mean for each frequency point
+            # 各周波数点についてトリム平均を計算する
             result = np.zeros(data_array.shape[1], dtype=complex)
 
             for i in range(data_array.shape[1]):
-                # Get data for this frequency point
+                # 対象周波数点のデータを取得する
                 point_data = data_array[:, i]
                 point_mags = magnitudes[:, i]
 
-                # Sort by magnitude
+                # 絶対値でソートする
                 sorted_indices = np.argsort(point_mags)
 
-                # Calculate trim count
+                # トリムする件数を算出する
                 n = len(point_data)
                 trim_count = int(n * trim_percent)
 
-                # Remove extreme values based on magnitude
+                # 絶対値に基づいて両端をトリムする
                 if trim_count > 0 and n > 2 * trim_count:
                     trimmed_indices = sorted_indices[trim_count:-trim_count]
                     result[i] = np.mean(point_data[trimmed_indices])
                 else:
-                    # Not enough data to trim, use mean
+                    # トリムできない場合は単純平均を使う
                     result[i] = np.mean(point_data)
 
             return result
         else:
-            # For real data, use scipy's trimmed mean
+            # 実数データはscipyのトリム平均を利用する
             return stats.trim_mean(data_array, trim_percent, axis=0)
 
     def _robust_average(self, data_array: np.ndarray, mad_threshold: float = 3.0) -> np.ndarray:
         """
-        Robust average using MAD (Median Absolute Deviation) for outlier rejection
+        MAD (Median Absolute Deviation) を用いたロバスト平均
 
-        This method:
-        1. Computes the median for each point
-        2. Computes MAD (Median Absolute Deviation)
-        3. Rejects outliers beyond mad_threshold * MAD
-        4. Averages remaining values
+        手順:
+        1. 各周波数点で中央値を計算
+        2. MAD (中央値からの絶対偏差の中央値) を計算
+        3. mad_threshold * MAD を超える外れ値を除去
+        4. 残りのデータを平均化
 
-        For complex numbers, outlier detection is based on magnitude deviation.
+        複素数の場合は絶対値の偏差を基準として外れ値判定を行う。
 
         Args:
-            data_array: Array of shape (n_measurements, n_points)
-            mad_threshold: Threshold for outlier rejection (default: 3.0)
+            data_array: 形状 (測定本数, 点数) の配列
+            mad_threshold: 外れ値判定のしきい値 (既定値: 3.0)
 
         Returns:
-            Robust averaged array of shape (n_points,)
+            形状 (点数,) のロバスト平均配列
         """
         if np.iscomplexobj(data_array):
-            # For complex data, use magnitude-based outlier detection
+            # 複素データでは絶対値に基づいて外れ値を判定する
             magnitudes = np.abs(data_array)
 
-            # Compute robust average for each frequency point
+            # 各周波数点でロバスト平均を計算する
             result = np.zeros(data_array.shape[1], dtype=complex)
 
             for i in range(data_array.shape[1]):
-                # Get data for this frequency point
+                # 対象周波数点のデータを取得する
                 point_data = data_array[:, i]
                 point_mags = magnitudes[:, i]
 
-                # Compute median and MAD for magnitudes
+                # 絶対値の中央値とMADを算出する
                 median_mag = np.median(point_mags)
                 mad = np.median(np.abs(point_mags - median_mag))
 
-                # Avoid division by zero
+                # ゼロ割りを避ける
                 if mad < 1e-10:
-                    # All values are very similar, use mean
+                    # ほぼ同じ値なので単純平均を採用する
                     result[i] = np.mean(point_data)
                 else:
-                    # Identify inliers (non-outliers)
-                    # MAD-based threshold: |magnitude - median_magnitude| < threshold * MAD
+                    # 外れ値ではないデータを抽出する
+                    # 判定式: |絶対値 - 中央値| < mad_threshold * MAD
                     deviation = np.abs(point_mags - median_mag)
                     inlier_mask = deviation < (mad_threshold * mad)
 
-                    # Use mean of inliers
+                    # 外れ値を除去したデータで平均を取る
                     if np.sum(inlier_mask) > 0:
                         result[i] = np.mean(point_data[inlier_mask])
                     else:
-                        # All points rejected (shouldn't happen), use median
+                        # 全て外れ値になった場合は中央値を使用する
                         real_median = np.median(point_data.real)
                         imag_median = np.median(point_data.imag)
                         result[i] = real_median + 1j * imag_median
 
             return result
         else:
-            # For real data
+            # 実数データの処理
             result = np.zeros(data_array.shape[1])
 
             for i in range(data_array.shape[1]):
                 point_data = data_array[:, i]
 
-                # Compute median and MAD
+                # 中央値とMADを算出する
                 median_val = np.median(point_data)
                 mad = np.median(np.abs(point_data - median_val))
 
                 if mad < 1e-10:
                     result[i] = np.mean(point_data)
                 else:
-                    # Identify inliers
+                    # 外れ値ではないデータを抽出する
                     deviation = np.abs(point_data - median_val)
                     inlier_mask = deviation < (mad_threshold * mad)
 
@@ -417,24 +421,23 @@ class ImpedanceCalculator:
         s21_ref: np.ndarray
     ) -> ImpedanceData:
         """
-        Calculate impedance with reference (through) measurement
+        リファレンス測定 (スルー) を用いたインピーダンス計算
 
-        This method uses a reference measurement (direct connection) to
-        normalize the DUT measurement.
+        スルー接続のリファレンス測定と比較することで、DUT測定を正規化する。
 
         Args:
-            frequencies: Array of frequencies in Hz
-            s21_dut: S21 measured with DUT
-            s21_ref: S21 reference measurement (through connection)
+            frequencies: 周波数配列 [Hz]
+            s21_dut: DUTを接続した際のS21
+            s21_ref: リファレンス (スルー) 測定のS21
 
         Returns:
-            ImpedanceData object containing calculated impedance data
+            計算済みインピーダンスを含むImpedanceData
         """
-        # Normalize S21 by reference
+        # リファレンスでS21を正規化する
         s21_ref_safe = np.where(np.abs(s21_ref) < 1e-10, 1e-10 + 0j, s21_ref)
         s21_normalized = s21_dut / s21_ref_safe
 
-        # Calculate impedance from normalized S21
+        # 正規化したS21からシャントスルー法でインピーダンスを算出する
         return self.calculate_from_s21_shunt(frequencies, s21_normalized)
 
     def calculate_parallel_components(
@@ -443,18 +446,18 @@ class ImpedanceCalculator:
         impedances: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Calculate parallel R and C components from complex impedance
+        複素インピーダンスから並列RC定数を算出する
 
-        Assumes parallel RC model: Z = R || (1/jωC)
+        並列RCモデル Z = R || (1/jωC) を仮定する。
 
         Args:
-            frequencies: Array of frequencies in Hz
-            impedances: Array of complex impedances
+            frequencies: 周波数配列 [Hz]
+            impedances: 複素インピーダンス配列
 
         Returns:
-            Tuple of (R_parallel, C_parallel) arrays
+            (R_parallel, C_parallel) のタプル
         """
-        # Y = 1/Z = 1/R + jωC
+        # アドミタンス Y = 1/Z = 1/R + jωC を用いて解析する
         admittances = 1.0 / impedances
 
         conductances = np.real(admittances)  # G = 1/R
@@ -475,21 +478,21 @@ class ImpedanceCalculator:
         impedances: np.ndarray
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Calculate series R and C components from complex impedance
+        複素インピーダンスから直列RC定数を算出する
 
-        Assumes series RC model: Z = R + 1/jωC
+        直列RCモデル Z = R + 1/jωC を仮定する。
 
         Args:
-            frequencies: Array of frequencies in Hz
-            impedances: Array of complex impedances
+            frequencies: 周波数配列 [Hz]
+            impedances: 複素インピーダンス配列
 
         Returns:
-            Tuple of (R_series, C_series) arrays
+            (R_series, C_series) のタプル
         """
         r_series = np.real(impedances)
         reactances = np.imag(impedances)
 
-        # For capacitive reactance: X = -1/(ωC), so C = -1/(ωX)
+        # 容量リアクタンス X = -1/(ωC) より C = -1/(ωX)
         omega = 2.0 * np.pi * frequencies
         c_series = np.where(
             np.abs(reactances) > 1e-10,
@@ -501,26 +504,27 @@ class ImpedanceCalculator:
 
 
 if __name__ == "__main__":
-    # Test code
+    # 動作確認用テストコード
     print("Impedance Calculator Test")
     print("=" * 70)
 
     z0 = 50.0
     calc = ImpedanceCalculator(z0=z0)
-    frequencies = np.linspace(100e6, 200e6, 51)  # 100-200 MHz, 51 points
+    frequencies = np.linspace(100e6, 200e6, 51)  # 100～200 MHz, 51点
 
-    # ========== Test 1: Shunt method ==========
+    # ========== テスト1: シャント (S21) 法 ==========
     print("\n[Test 1] Shunt (S21) method")
     print("-" * 70)
 
-    z_test_shunt = 100.0  # 100 Ohm
-    # From shunt formula: S21 = 2*Z0 / (Zdut + 2*Z0)
-    s21_test_shunt = 2 * z0 / (z_test_shunt + 2 * z0)
+    z_test_shunt = 100.0  # 100 Ω
+    # シャント法の式: S21 = 2*Z / (2*Z + Z0)
+    s21_test_shunt = 2 * z_test_shunt / (2 * z_test_shunt + z0)
     s21_array_shunt = np.full(len(frequencies), s21_test_shunt, dtype=complex)
 
     print(f"Input impedance:     {z_test_shunt} Ohm")
     print(f"Calculated S21:      {s21_test_shunt:.6f}")
-    print(f"Expected S21:        {2*50/(100+100):.6f} = 0.5")
+    expected_s21_shunt = 2 * z_test_shunt / (2 * z_test_shunt + z0)
+    print(f"Expected S21:        {expected_s21_shunt:.6f}")
 
     impedance_data_shunt = calc.calculate_from_s21_shunt(frequencies, s21_array_shunt)
 
@@ -529,18 +533,18 @@ if __name__ == "__main__":
     assert abs(impedance_data_shunt.magnitudes[0] - z_test_shunt) < 0.01, "Shunt calculation error!"
     print("[OK] Shunt method verified")
 
-    # ========== Test 2: Reflection (S11) method ==========
+    # ========== テスト2: 反射 (S11) 法 ==========
     print("\n[Test 2] Reflection (S11) method")
     print("-" * 70)
 
-    z_test_s11 = 75.0  # 75 Ohm
-    # From reflection formula: S11 = (Z - Z0) / (Z + Z0)
+    z_test_s11 = 75.0  # 75 Ω
+    # 反射法の式: S11 = (Z - Z0) / (Z + Z0)
     s11_test = (z_test_s11 - z0) / (z_test_s11 + z0)
     s11_array = np.full(len(frequencies), s11_test, dtype=complex)
 
     print(f"Input impedance:     {z_test_s11} Ohm")
     print(f"Calculated S11:      {s11_test:.6f}")
-    print(f"Expected S11:        {(75-50)/(75+50):.6f} = 0.2")
+    print(f"Expected S11:        {(75-50)/(75+50):.6f}")
 
     impedance_data_s11 = calc.calculate_from_s11_reflection(frequencies, s11_array)
 
@@ -549,18 +553,19 @@ if __name__ == "__main__":
     assert abs(impedance_data_s11.magnitudes[0] - z_test_s11) < 0.01, "S11 calculation error!"
     print("[OK] S11 method verified")
 
-    # ========== Test 3: Series (S21) method ==========
+    # ========== テスト3: シリーズ (S21) 法 ==========
     print("\n[Test 3] Series (S21) method")
     print("-" * 70)
 
-    z_test_series = 50.0  # 50 Ohm
-    # From series formula: S21 = Z / (Z + 2*Z0)
-    s21_test_series = z_test_series / (z_test_series + 2 * z0)
+    z_test_series = 50.0  # 50 Ω
+    # シリーズ法の式: S21 = 2*Z0 / (2*Z0 + Z)
+    s21_test_series = 2 * z0 / (2 * z0 + z_test_series)
     s21_array_series = np.full(len(frequencies), s21_test_series, dtype=complex)
 
     print(f"Input impedance:     {z_test_series} Ohm")
     print(f"Calculated S21:      {s21_test_series:.6f}")
-    print(f"Expected S21:        {50/(50+100):.6f} = 0.333...")
+    expected_s21_series = 2 * z0 / (2 * z0 + z_test_series)
+    print(f"Expected S21:        {expected_s21_series:.6f}")
 
     impedance_data_series = calc.calculate_from_s21_series(frequencies, s21_array_series)
 
@@ -569,19 +574,19 @@ if __name__ == "__main__":
     assert abs(impedance_data_series.magnitudes[0] - z_test_series) < 0.01, "Series calculation error!"
     print("[OK] Series method verified")
 
-    # ========== Test 4: Consistency check ==========
+    # ========== テスト4: 整合性チェック ==========
     print("\n[Test 4] Same DUT measured with S11 and Shunt should give similar results")
     print("-" * 70)
 
-    z_dut = 100.0  # 100 Ohm DUT
+    z_dut = 100.0  # 100 ΩのDUT
 
-    # S11 measurement
+    # S11測定
     s11_dut = (z_dut - z0) / (z_dut + z0)
     s11_array_dut = np.full(len(frequencies), s11_dut, dtype=complex)
     z_from_s11 = calc.calculate_from_s11_reflection(frequencies, s11_array_dut)
 
-    # Shunt measurement
-    s21_dut = 2 * z0 / (z_dut + 2 * z0)
+    # シャント測定
+    s21_dut = 2 * z_dut / (2 * z_dut + z0)
     s21_array_dut = np.full(len(frequencies), s21_dut, dtype=complex)
     z_from_shunt = calc.calculate_from_s21_shunt(frequencies, s21_array_dut)
 
