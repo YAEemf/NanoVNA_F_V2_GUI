@@ -1,5 +1,7 @@
 # NanoVNA-F v2 でインピーダンス測定
 
+!["NanoVNA+DUT"](Picture1.png)
+
 ## NanoVNA-F v2 仕様
 
 NanoVNA-F v2 SYSJOINTが開発した、２万円程度で購入可能な小型のベクトルネットワークアナライザです。
