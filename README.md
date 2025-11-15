@@ -1,12 +1,9 @@
-# NanoVNA を使ってインピーダンス特性を測定しよう
+# NanoVNA-F v2 でインピーダンス測定
 
 ## NanoVNA-F v2 仕様
 
-### NanoVNA-F v2とは
-
 NanoVNA-F v2 SYSJOINTが開発した、２万円程度で購入可能な小型のベクトルネットワークアナライザです。
 
-**主な仕様:**
 - **周波数範囲:** 50 kHz ~ 3 GHz
 - **測定ポート:** PORT1 (S11)、PORT2 (S21)
 - **S11 ダイナミックレンジ：** 50dB
@@ -399,8 +396,6 @@ $$
 
 測定ポイント数に応じて通信タイムアウトを調整します。
 
-**実装 (nanovna_controller.py:213):**
-
 ```python
 scan_timeout = max(self.timeout, points * 0.15 + 5)
 ```
@@ -410,8 +405,6 @@ scan_timeout = max(self.timeout, points * 0.15 + 5)
 ### 2. 周波数帯域境界の重複除去
 
 マルチバンド掃引では、帯域境界で周波数が重複する事があったため周波数差が 0.1% 以下のデータを重複とみなして除去します。
-
-**実装 (nanovna_controller.py:497):**
 
 ```python
 freq_tolerance = 0.001  # 0.1%
@@ -424,8 +417,6 @@ for freq, s11, s21 in all_data:
 ### 3. キャリブレーション適用後の待機時間
 
 キャリブレーションを呼び出した後、設定が反映・安定するまで待機します。
-
-**実装 (nanovna_controller.py:598):**
 
 ```python
 time.sleep(0.2)  # キャリブレーション反映待ち
