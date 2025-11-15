@@ -2,6 +2,13 @@
 
 !["NanoVNA+DUT"](Picture1.png)
 
+## 実行方法
+このリポジトリをクローンしてから
+```bash
+streamlit run app.py
+```
+を実行するとウェブアプリが立ち上がります。
+
 ## NanoVNA-F v2 仕様
 
 NanoVNA-F v2 SYSJOINTが開発した、２万円程度で購入可能な小型のベクトルネットワークアナライザです。
