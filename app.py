@@ -325,7 +325,7 @@ else:
 # デバッグモード
 debug_mode = st.sidebar.checkbox(
     "Debug Mode",
-    value=False,
+    value=True,
     help="Show raw data and debug information"
 )
 
