@@ -1,6 +1,7 @@
 # NanoVNA-F v2 でインピーダンス測定
 
-!["NanoVNA+DUT"](Picture1.png)
+!["NanoVNA+DUT"](Picture1.png)  
+シャントスルー法による測定の様子
 
 ## 実行方法
 このリポジトリをクローンしてから
