@@ -1,3 +1,7 @@
+この度は「最適解を求める PDN設計入門」を購入頂きありがとうございます。
+https://yaemanufacture.booth.pm/items/7650460
+NanoVNAを持っていれば誰でもインピーダンス測定が行えるように購入者以外にもスクリプトを公開します。
+
 # NanoVNA-F v2 でインピーダンス測定
 
 !["NanoVNA+DUT"](Picture1.png)  
