@@ -1,8 +1,9 @@
 この度は「最適解を求める PDN設計入門」を購入頂きありがとうございます。  
 https://yaemanufacture.booth.pm/items/7650460  
-NanoVNAを持っていれば誰でもインピーダンス測定が行えるように購入者以外にもスクリプトを公開します。
+NanoVNAを用いて 10kHz～1GHz までのインピーダンス測定ができるスクリプトです。
+本を購入頂かなくてもREADMEを読めば測定できるようにまとめてあります。
 
-# NanoVNA-F v2 でインピーダンス測定
+# NanoVNA-F v2 によるインピーダンス測定
 
 !["NanoVNA+DUT"](Picture1.png)  
 シャントスルー法による測定の様子
@@ -16,7 +17,7 @@ streamlit run app.py
 
 ## NanoVNA-F v2 仕様
 
-NanoVNA-F v2 SYSJOINTが開発した、２万円程度で購入可能な小型のベクトルネットワークアナライザです。
+SYSJOINTが開発した、２万円程度で購入可能な小型のベクトルネットワークアナライザです。
 
 - **周波数範囲:** 50 kHz ~ 3 GHz
 - **測定ポート:** PORT1 (S11)、PORT2 (S21)
